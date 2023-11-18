@@ -7,6 +7,11 @@
 #include <linux/ftrace.h>
 #include "ftrace_helper.h"
 
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Sih");
+MODULE_DESCRIPTION("Mitigate Internal fragmenatation");
+MODULE_VERSION("0.01");
+
 asmlinkage void *(*orig_make_alloc_exact)(const struct pt_regs *);
 asmlinkage void *fit_and_free(const struct pt_regs *regs)
 {
