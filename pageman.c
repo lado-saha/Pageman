@@ -74,7 +74,7 @@ asmlinkage void *fit_and_free(const struct pt_regs *regs)
 	// This is a log to benchmark the process
 	ktime_get_ts64(&end_time);
 	elapsed_time = timespec64_sub(end_time, start_time).tv_nsec;
-	pr_info("Fit&Free Stats| Fit_size=%lu KB \t Required_pages=%u \tOriginal_pages=%u \tElapse=%llu ns",
+	pr_info("Fit&Free: Stats| Fit_size=%lu KB \t Required_pages=%u \tOriginal_pages=%u \tElapse=%llu ns",
 		size / 1024, nr_pages_req, total_nr_pages, elapsed_time);
 	return (void *)start_address;
 }
@@ -82,10 +82,16 @@ asmlinkage void *fit_and_free(const struct pt_regs *regs)
 asmlinkage void (*orig_free_pages_exact)(const struct pt_regs *);
 asmlinkage void free_and_fit(const struct pt_regs *regs)
 {
+	orig_free_pages_exact(regs);
 	unsigned long start_address = gb_start_address;
-	if ((void *)start_address == NULL ||
-	    get_nr_pages_metadata(virt_to_page((void *)start_address)) == 0) {
+	if ((void *)start_address == NULL) {
 		pr_info("Free&Fit: Invalid Address\n");
+		return;
+	};
+	unsigned int fit_nr_pages =
+		get_nr_pages_metadata(virt_to_page((void *)start_address));
+	if (fit_nr_pages == 0) {
+		pr_info("Free&Fit: Not required\n");
 		return;
 	}
 
@@ -95,8 +101,6 @@ asmlinkage void free_and_fit(const struct pt_regs *regs)
 	s64 elapsed_time;
 	// This is a log to benchmark the process
 	ktime_get_ts64(&start_time);
-	unsigned int fit_nr_pages =
-		get_nr_pages_metadata(virt_to_page((void *)start_address));
 	req_span = fit_nr_pages * PAGE_SIZE;
 	unsigned short init_order = get_order(req_span);
 	unsigned short order = init_order - 1;
@@ -136,7 +140,7 @@ asmlinkage void free_and_fit(const struct pt_regs *regs)
 	// This is a log to benchmark the process
 	ktime_get_ts64(&end_time);
 	elapsed_time = timespec64_sub(end_time, start_time).tv_nsec;
-	pr_info("Fit&Free Stats| Free_size=%lu KB \t fit_pages=%u \tMax_pages=%lu \tElapse=%llu ns\n",
+	pr_info("Fit&Free: Stats| Free_size=%lu KB \t fit_pages=%u \tMax_pages=%lu \tElapse=%llu ns\n",
 		(fit_nr_pages * PAGE_SIZE) / 1024, fit_nr_pages, total_nr_pages,
 		elapsed_time);
 }

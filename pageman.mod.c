@@ -48,6 +48,7 @@ __used __section("__versions") = {
 	{ 0x5b8239ca, "__x86_return_thunk" },
 	{ 0xf0fdf6cb, "__stack_chk_fail" },
 	{ 0xa648e561, "__ubsan_handle_shift_out_of_bounds" },
+	{ 0x65487097, "__x86_indirect_thunk_rax" },
 	{ 0x6c78ae0, "get_nr_pages_metadata" },
 	{ 0x87a21cb3, "__ubsan_handle_out_of_bounds" },
 	{ 0xe007de41, "kallsyms_lookup_name" },
@@ -63,4 +64,4 @@ __used __section("__versions") = {
 MODULE_INFO(depends, "");
 
 
-MODULE_INFO(srcversion, "27E22C85B2273F2A1F92382");
+MODULE_INFO(srcversion, "E559F0D662857B4E50B6989");
