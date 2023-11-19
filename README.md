@@ -41,7 +41,7 @@ The implementation was done on a linux machine with the following specs
 
 The project was carried out on a custom built **linux kernel version 6.5.3.**
 
-### 0) Prerequisites
+### 0. Prerequisites
 The following steps were carried out to setup the system
  ```bash
 # The following libraries were installed during the setup process
@@ -59,11 +59,8 @@ sudo apt install git gcc make perl
 # Additional libraries for compilation
 sudo apt-get install libncurses-dev flex bison openssl libssl-dev dkms libelf-dev libudev-dev libpci-dev libiberty-dev autoconf
 sudo apt install dwarves
-
-# Required for code editor intellisense 
-sudo apt install cscope exuberant-ctags
 ```
-### 1) Building a Linux kernel from source
+### 1. Building a Linux kernel from source
 - Download and extraction of the kernel 
 ``` bash
 # Changing to the home directory and creating our working directory manager
@@ -87,7 +84,21 @@ sudo lsmod > /tmp/lsmod.now
 # After putting our terminal in fullscreen, we edit the configuration of our kernel 
 make menuconfig
 ```
-The last command opens a minimalist menu driven interface to tweak some of the kernel configurations. The table below contains the different configurations which were done to the kernel 
+The last command opens a minimalist menu driven interface to tweak some of the kernel configurations. 
+
+---
+NB: The following keys are used in the menuconfig (non exhaustive)
+|Keyboard Key | Meaning | Visual Effect|
+|--|---|--|
+|y| Enable| * |
+|n| Disable| n |
+|m| Enable as module| m |
+|Esc(x2)| Navigate back | |
+|Up, Down| Scroll Up, Down| |
+|Left, Right| Navigate about the menu| Highlights the Exit, Save, Load options|
+---
+The table below contains the different configurations which were done to the kernel 
+
 |Feature| Info |Path in menu |Precise config option |New value|
 |--|--|--|--|--|
 |Kernel config Support| Allows us to see the current kernel config details | General Setup/ Kernel .config support | CONFIG_IKCONFIG |y|
@@ -95,10 +106,72 @@ The last command opens a minimalist menu driven interface to tweak some of the k
 |Kernel profiling| Kernel profiling support | General Setup / Profiling support| CONFIG_PROFILING | n|
 |HAM RADIO | Support for the HAM radio | Networking support/ Amateur Radio support| CONFIG_HAMRAIO|y|
 |Userspace IO | UIO support | Device Drivers / Userspace I/O Drivers | CONFIG_UIO | m|
-|UIO platform driver with generic IRQ(Interrupt handler Request) handling | Device Drivers / Userspace I/O Drivers / Userspace I/O platform driver with generic IRQ handling| CONFIG_UIO_PDRV_GENIRQ|m|
-MS-DOS filesystem support | File systems / DOS/FAT/NT Filesystems / MSDOS fs support |CONFIG_MSDOS_FS | m|
+| |UIO platform driver with generic IRQ(Interrupt handler Request) handling | Device Drivers / Userspace I/O Drivers / Userspace I/O platform driver with generic IRQ handling| CONFIG_UIO_PDRV_GENIRQ|m|
+|MS-DOS filesystem support |Mount NTFS drives| File systems / DOS/FAT/NT Filesystems / MSDOS fs support |CONFIG_MSDOS_FS | m|
 |Security LSMs | Turn off kernel LSMs (Not safe for production environments) | Security options / Enable different security models | CONFIG_SECURITY | n|
 |Kernel debug: stack utilization info | Have full debuf info about the memory | Kernel hacking / Memory Debugging / Stack utilization instrumentation | CONFIG_DEBUG_STACK-USAGE| y |
+
+- After applying all the configuration above we saved and left the menu. We then proceseded by disabling some securities and were finally ready to build the kernel. Th e building process took 45 minutes and was very CPU and memory Intensive 
+
+
+> ⚠️ **Warning:** Any interruption like sleeping or shutdown during the compilation process may lead to a complete corruption of the current system GUI and internal components . Thus we made sure our computer could not sleep and was well powered.
+
+```bash
+# ~/manger/linux-6.5.3
+# Disabling some debian specific security keys 
+scripts/config --disable SYSTEM_REVOCATION_KEYS
+scripts/config --disable SYSTEM_TRUSTED_KEYS
+
+# Building the kernel and specifying the modules to install 
+# For parallel compilations, we used -j4 which allocates 4 cores 
+make LSMOD=/tmp/lsmod.now -j4
+```
+### 3. Setting up the Editing environment 
+- We used the [neovim](https://github.com/neovim/neovim/wiki/Installing-Neovim#linux) editor. The basic installation was done using the following commands.
+```bash
+# Navigate to the home directory
+cd ~
+# Installing the neovim image
+curl -LO https://github.com/neovim/neovim/releases/latest/download/nvim.appimage
+# Giving the permissions 
+chmod u+x nvim.appimage
+./nvim.appimage
+#
+# if the ./nvim.appimage fails, we can try
+./nvim.appimage --appimage-extract
+./squashfs-root/AppRun --version
+
+# Optional: exposing nvim globally.
+sudo mv squashfs-root /
+sudo ln -s /squashfs-root/AppRun /usr/bin/nvim
+
+# Finally, we can run the editor using the command below from any where
+nvim
+```
+After installing neovim, some setup process was needed to make it suitable for editing C code, and the resource below was of great help 
+
+[![The perfect Neovim Setup for C++](https://img.youtube.com/vi/lsFoZIg-oDs/0.jpg)](https://www.youtube.com/watch?v=lsFoZIg-oDs)
+
+> Another option could have been the Code editor [vscode](https://code.visualstudio.com/docs/setup/linux). In that case, we could have installed the C/C++ extensions from Microsoft and the Linux Kernel extensions.
+
+- After setting up the code editor for vanilla C code, we had make sure it understood we were dealing with Linux kernel code and could include Kernel header files. This was done beacuse the linux kernel does not use the standard gcc library. The setup was as follows. 
+> The [StackOverflow thread](https://stackoverflow.com/questions/33676829/vim-configuration-for-linux-kernel-development) was of great help
+```bash
+# Navigate to the kernel code 
+cd ~/manager/linux-6.5.3 
+
+# Required for code editor to navigate through the kernel code 
+sudo apt install cscope exuberant-ctags
+
+# Creating an index database for easy navigation and code intelisense 
+# We index only indexed the x86_64 architecture directories since we had no need for cross platform and our computer was an x86 64bit computer 
+make O=. ARCH=x86_64 COMPILED_SOURCE=1 cscope tags
+
+# Next, we generated the following json file to inform our editor about some compiling options.
+python3 scripts/clang-tools/gen_compile_commands.py
+```
+> NB: Eventhough we didnot use vscode, we found the resource [vscode for kernel dev](https://github.com/neilchennc/vscode-linux-kernel) potentially helpful. It mainly consists in editing the ```c_cpp_properties.json```, ```settings.json```, ```tasks.json```, ```.vscode/``` to recognise the kernel header files
+
 
 ## Results
 
