@@ -1,6 +1,7 @@
 /*
  * Helper library for ftrace hooking kernel functions
  * Author: Harvey Phillips (xcellerator@gmx.com)
+ * Edited By: @sih
  * License: GPL
  */
 
@@ -12,18 +13,9 @@
 #if defined(CONFIG_X86_64) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
 #define PTREGS_SYSCALL_STUBS 1
 #endif
-
-/* x64 has to be special and require a different naming convention */
-#ifdef PTREGS_SYSCALL_STUBS
-#define SYSCALL_NAME(name) (name)
-#else
-#define SYSCALL_NAME(name) (name)
-#endif
-
-#define HOOK(_name, _hook, _orig)                                 \
-	{                                                         \
-		.name = SYSCALL_NAME(_name), .function = (_hook), \
-		.original = (_orig),                              \
+#define HOOK(_name, _hook, _orig)                                        \
+	{                                                                \
+		.name = _name, .function = (_hook), .original = (_orig), \
 	}
 
 /*
@@ -37,10 +29,6 @@
  * protection and implement our own).
 */
 #define USE_FENTRY_OFFSET 0
-#if !USE_FENTRY_OFFSET
-#pragma GCC optimize("-fno-optimize-sibling-calls")
-#endif
-
 /* We pack all the information we need (name, hooking function, original function)
  * into this struct. This makes is easier for setting up the hook and just passing
  * the entire struct off to fh_install_hook() later on.
