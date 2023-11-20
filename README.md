@@ -731,9 +731,270 @@ void fh_remove_hooks(struct ftrace_hook *hooks, size_t count)
 
 ```
 
-- Finally we implemented the main module `pageman.c` as follows. 
+- Finally we implemented the main module `pageman.c` as follows. The code was well documented
 ```c 
+#include "asm/page.h"
+#include "asm/ptrace.h"
+#include "linux/linkage.h"
+#include "linux/panic.h"
+#include "linux/printk.h"
+#include "linux/stddef.h"
+#include <linux/module.h>
+#include <linux/gfp.h>
+#include <linux/ftrace.h>
+#include "ftrace_helper.h"
 
+/*
+  * Every kernel module must present it self to the kernel. This is done using different MODULE_<*> macros 
+*/
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("LADO SAHA");
+MODULE_DESCRIPTION(
+	"Another way mitigate the internal fragmentation of the Buddy Allocator.");
+MODULE_VERSION("0.01");
+
+#define MODULE_NAME "Pageman"
+#define MOD_NAME_FIT MODULE_NAME "(Fit): "
+#define MOD_NAME_FREE MODULE_NAME "(Free): "
+
+/**
+* The fit and free function is responsible for trimming down the number of allocated pages to the minimum possible size, 
+* then carefully frees the excess pages in such a way not to completely decompose higher orders to order 0.
+* When ever we intercept an allocation call with a size (x) KB, of order (n), and starting virtual address (virt) we proceed as follows:
+* 1) Ideal Case: x can be written as a 2^n times PAGE_SIZE e.g x=128KiB, x=1024KiB etc, we donot do anything 
+* 2) Worst Case: x cannot be written as 2^n times PAGE_SIZE e,g x=129KiB, x=1000KiB etc we intervene. 
+*   2.0) We calculate the pages allocated by the buddy allocator by using the fact that it will always allocate (total_nr_pages) 2^n * PAGE_SIZE 
+*   2.1) We calculate the minimum amount of pages which can fit the size (nr_pages_req) by finding the upper bound of x/PAGE_SIZE 
+*   2.1) We successively divide the address space orignally spanning from (virt to virt + 2^n * PAGE_SIZE) into 2 equals halfs and compare if the left half can fit
+*       the size 
+*     2.1.1) In case the size can (not exactly) fit, we free right half to the required order, consider the address space as the left half, 
+*         In  case the size is exactly fit to the left half, we just free the right half and mark the left as allocated and **stop**
+*     2.1.2) In case the size cannot fit into the left half, we mark the left as allocated then continue on the right half, then reduce the the 
+*         size required by subtracting from it the size of the left half allocated. 
+*     We decreement the order (n--) and restart the subdivision.
+*
+*   2.3) We finally stop, save the number of pages allocated in the pages_metadata array at address the page frame number of the address
+*     and return the initial address of the memory block and at this point we know that we have allocated the minimum number of pages 
+*     required for the size.  
+* Complexity O(log2(n)) and in most computers, n = 11 thus 0(1)
+*
+* @regs Eventhough this is unused, this the pointer to the registers of the hooked function orig_make_alloc_exact
+* returns address
+*/
+asmlinkage void *fit_and_free(const struct pt_regs *regs);
+
+/**
+ * This is a pointer to the make_alloc_exact function in the kernel. We do this to be able to call the original behavior when ever needed
+ * @pt_regs is the pointer to the registry entry which contains the information about the function. 
+ */
+asmlinkage void *(*orig_make_alloc_exact)(const struct pt_regs *);
+
+/**
+ * This is a pointer to the free_pages_exact function in the kernel which is hooked or intercepted
+ */
+asmlinkage void (*orig_free_pages_exact)(const struct pt_regs *);
+
+/**
+* The free and fit function is responsible for freeing the previously fitted pages. 
+* When ever we intercept a deallocation call on an address which was previously fitted(We know this by verifying if the pfn has a non null entry in the page metadata array).
+* If this is not the case, we do nothing else we execute this function.
+* 1) We get the number of pages allocated from the array and calculate the size (x) KiB of the allocation and required order (n) 
+* 2) We calculate the pages allocated which were to be allocated by the buddy allocator by using the fact that it will always allocate (total_nr_pages) 2^n * PAGE_SIZE 
+*   2.1) We successively divide the address space orignally spanning from (virt to virt + 2^n * PAGE_SIZE) into 2 equals halfs and compare if the left half can fit
+*       the allocated size
+*     2.1.1) In case the size can (but not exactly) fit, we just consider the left half and continue 
+*         In  case the size can exactly fit to the left half, we just free the left half and  **stop**
+*     2.1.2) In case the size cannot fit into the left half, we free the left half to the required order and reduce the size required to be freed by subtracting
+*         from it the size of the left half freed and continue 
+*     We decreement the order (n--) and restart the subdivision.
+*   2.2) We finally stop and reset the value of allocated pages in the array at index page frame number of the current address to 0 
+* Complexity O(log2(n)) and in most computers, n = 11 thus 0(1)
+*
+* @regs Eventhough this is unused, this the pointer to the registers of the hooked function orig_free_pages_exact 
+*/
+asmlinkage void free_and_fit(const struct pt_regs *regs);
+
+asmlinkage void *fit_and_free(const struct pt_regs *regs)
+{
+	unsigned long start_address = gb_start_address;
+
+	if ((void *)start_address == NULL) {
+		pr_err(MOD_NAME_FIT "Initial allocation failed\n");
+		return NULL;
+	}
+
+	size_t size = gb_size;
+	unsigned int nr_pages_req = DIV_ROUND_UP(size, PAGE_SIZE),
+		     init_order = gb_order, total_nr_pages = 1 << init_order;
+
+	if (total_nr_pages == nr_pages_req) {
+		pr_info(MOD_NAME_FIT
+			"Nothing to fit with %zu KB and %u Pages\n",
+			size / 1024, nr_pages_req);
+		return (void *)start_address;
+	}
+
+	struct timespec64 start_time, end_time;
+	s64 elapsed_time;
+	unsigned long addr_start, addr_mid, addr_end, size_span, req_span;
+	struct page *page_head;
+	unsigned int order = init_order - 1;
+
+	// This is a log to benchmark the process
+	ktime_get_ts64(&start_time);
+	pr_info(MOD_NAME_FIT
+		"Order From\t\t Mid\t\t To\t\t Fit_pages\t Fit_size\t Half_size\n");
+
+	addr_start = start_address;
+	addr_end = start_address + total_nr_pages * PAGE_SIZE;
+	req_span = PAGE_SIZE * nr_pages_req;
+
+	while (1) {
+		addr_mid = (addr_start / 2 + addr_end / 2);
+		size_span = addr_end - addr_mid;
+		pr_info(MOD_NAME_FIT
+			"%u   0x%lx 0x%lx 0x%lx \t%u \t%lu KB \t%lu KB\n",
+			order, addr_start, addr_mid, addr_end, nr_pages_req,
+			(req_span / 1024), (size_span / 1024));
+		if (req_span > size_span) {
+			req_span -= size_span;
+			addr_start = addr_mid;
+			order--;
+		} else {
+			page_head = virt_to_page((void *)(addr_mid + 1));
+			__free_pages(page_head, order);
+			if (req_span == size_span) {
+				set_nr_pages_metadata(
+					virt_to_page((void *)start_address),
+					nr_pages_req);
+				break;
+			}
+			addr_end = addr_mid;
+			order--;
+		}
+	}
+	// This is a log to benchmark the process
+	ktime_get_ts64(&end_time);
+	elapsed_time = timespec64_sub(end_time, start_time).tv_nsec;
+	pr_info(MOD_NAME_FIT
+		"Stats| Fit_size=%lu KB \t Required_pages=%u \tOriginal_pages=%u \tElapse=%llu ns \n\n",
+		(size / 1024), nr_pages_req, total_nr_pages, elapsed_time);
+	return (void *)start_address;
+}
+
+asmlinkage void (*orig_free_pages_exact)(const struct pt_regs *);
+
+asmlinkage void free_and_fit(const struct pt_regs *regs)
+{
+	orig_free_pages_exact(regs);
+	unsigned long start_address = gb_start_address;
+	if ((void *)start_address == NULL) {
+		pr_info(MOD_NAME_FREE "Invalid Address\n");
+		return;
+	};
+	unsigned int fit_nr_pages =
+		get_nr_pages_metadata(virt_to_page((void *)start_address));
+	if (fit_nr_pages == 0) {
+		pr_info(MOD_NAME_FREE "Not required\n");
+		return;
+	}
+
+	struct page *page_head;
+	unsigned long addr_start, addr_end, addr_mid, size_span, req_span;
+	struct timespec64 start_time, end_time;
+	s64 elapsed_time;
+	// This is a log to benchmark the process
+	ktime_get_ts64(&start_time);
+	req_span = fit_nr_pages * PAGE_SIZE;
+	unsigned short init_order = get_order(req_span);
+	unsigned short order = init_order - 1;
+	unsigned long total_nr_pages = 1 << init_order;
+
+	if (fit_nr_pages == total_nr_pages) {
+		pr_info(MOD_NAME_FREE "Nothing to Fit\n");
+		return;
+	}
+	pr_info(MOD_NAME_FREE
+		"Order From\t\t Mid\t\t To\t\t fit_pages\t left_size\t Half_size\n");
+
+	addr_start = start_address;
+	addr_end = start_address + (total_nr_pages * PAGE_SIZE);
+	while (1) {
+		addr_mid = addr_start / 2 + addr_end / 2;
+		size_span = addr_end - addr_mid;
+		pr_info(MOD_NAME_FREE
+			"%u   0x%lx 0x%lx 0x%lx \t%u \t%lu KB \t%lu KB\n",
+			order, addr_start, addr_mid, addr_end, fit_nr_pages,
+			(req_span / 1024), (size_span / 1024));
+		if (req_span < size_span) {
+			addr_end = addr_mid;
+			order--;
+		} else {
+			page_head = virt_to_page((void *)(addr_start));
+			__free_pages(page_head, order);
+			if (req_span == size_span) {
+				set_nr_pages_metadata(
+					virt_to_page((void *)start_address), 0);
+				break;
+			}
+			req_span -= size_span;
+			addr_start = addr_mid;
+			order--;
+		}
+	}
+
+	// This is a log to benchmark the process
+	ktime_get_ts64(&end_time);
+	elapsed_time = timespec64_sub(end_time, start_time).tv_nsec;
+	pr_info(MOD_NAME_FREE
+		"Stats| Free_size=%lu KB \t fit_pages=%u \tMax_pages=%lu \tElapse=%llu ns\n\n",
+		(fit_nr_pages * PAGE_SIZE) / 1024, fit_nr_pages, total_nr_pages,
+		elapsed_time);
+}
+
+/**
+ * This array contains all the hooks to the functions.
+ * We first write the name of the function to hook, followed by the function to be called instead, and an address to the original function which was hooked 
+*/
+static struct ftrace_hook hooks[2] = {
+	// Hook to the function make_alloc_exact by fit_and_free
+	HOOK("make_alloc_exact", fit_and_free, &orig_make_alloc_exact),
+	// Hook to the function free_pages_exact by free_and_fit
+	HOOK("free_pages_exact", free_and_fit, &orig_free_pages_exact)
+};
+
+/**
+ * We initialize the pageman module. 
+ * During the initialization, we insert the hooks into memory and await function calls to that hooked function to take control
+ * Then, we set @is_pageman_loaded to True meaning the hooks have been installed and pageman is ready to work
+*/
+static int __init pageman_init(void)
+{
+	int err;
+	err = fh_install_hooks(hooks, ARRAY_SIZE(hooks));
+	if (err)
+		return err;
+
+	is_pageman_loaded = true;
+	pr_info(MODULE_NAME "Succesfully loaded\n");
+	return 0;
+}
+
+/**
+ * We destroy or uninstall our module including the hooks.
+ * Then make sure we set @is_pageman_loaded to False 
+  */
+static void __exit pageman_exit(void)
+{
+	fh_remove_hooks(hooks, ARRAY_SIZE(hooks));
+
+	is_pageman_loaded = false;
+	pr_info("Pageman(F&F): unloaded\n");
+}
+
+// This 2 calls are respectively called when we insert and remove our modules.
+module_init(pageman_init);
+module_exit(pageman_exit);
 ```
 ## Results
 
@@ -743,129 +1004,4 @@ void fh_remove_hooks(struct ftrace_hook *hooks, size_t count)
 
 ## References
 
-## Appendices
-This book covers the following exciting features:
-* Write high-quality modular kernel code (LKM framework) for 5.x kernels
-* Configure and build a kernel from source
-* Explore the Linux kernel architecture
-* Get to grips with key internals regarding memory management within the kernel
-* Understand and work with various dynamic kernel memory alloc/dealloc APIs
-Discover key internals aspects regarding CPU scheduling within the kernel
-Gain an understanding of kernel concurrency issues
-Learn how to work with key kernel synchronization primitives
 
-If you feel this book is for you, get your [copy](https://www.amazon.com/dp/178995343X) today!
-
-<a href="https://www.packtpub.com/?utm_source=github&utm_medium=banner&utm_campaign=GitHubBanner"><img src="https://raw.githubusercontent.com/PacktPublishing/GitHub/master/GitHub.png" 
-alt="https://www.packtpub.com/" border="5" /></a>
-
-## Instructions and Navigations
-All of the code is organized into folders. For example, ch2.
-
-The code will look like the following:
-```C
-static int __init miscdrv_init(void)
-{
-	int ret;
-	struct device *dev;
-```
-
-**Following is what you need for this book:**
-This book is for Linux programmers beginning to find their way with Linux kernel development. Linux kernel and driver developers looking to overcome frequent and common kernel development issues, as well as understand kernel internals, will benefit from this book. A basic understanding of Linux CLI and C programming is required.
-
-With the following software and hardware list you can run all code files present in the book (Chapter 1-13).
-### Software and Hardware List
-| Chapter | Software required | OS required |
-| -------- | ------------------------------------ | ----------------------------------- |
-| 1-13 | Oracle VirtualBox 6.1 | Windows and Linux (Any) |
-
-We also provide a PDF file that has color images of the screenshots/diagrams used in this book. [Click here to download it](https://static.packt-cdn.com/downloads/9781789953435_ColorImages.pdf).
-
-### Known Errata
-Wrt the PDF doc:
-
-- pg 26:
-    - 'sudo apt install git fakeroot ...' ; corrections:
-        - change pstree to psmisc
-        - to install 'tuna' refer https://tuna.readthedocs.io/en/stable/installation.html 
-        - change hexdump to bsdmainutils (the package name)
-        - for 'openjdk-14-jre' installation refer https://java.tutorials24x7.com/blog/how-to-install-openjdk-14-on-ubuntu
-- pg 99:
-    - 'Chapter 9' should be 'Chapter 10'
-    - 'Chapter 10' should be 'Chapter 11'
-- pg 155:
-    - the line '// ch4/helloworld_lkm/hellowworld_lkm.c' has the letter 'w' twice; it should be:
-     '// ch4/helloworld_lkm/helloworld_lkm.c'   (thanks to @xuhw21)
-- pg 246:
-    - 'via the module_parm_cb() macro' should be 'via the module_param_cb() macro'
-- pg 291:
-    - '(The kernel-mode stack for ' - incomplete sentence; it should be deleted/ignored.
-- pg 307:
-    - the process view after the sentence '...  and a total of *nine threads*:'
-        - the first two columns are shown as 'PID  TGID'; the order is reversed, it should be 'TGID  PID'
-- pg 324: in *Figure 7.4*, the third column 'Addr Bits', last 3 rows have errors; the corrections are shown here:
-
-                          `AB    VM-split`
-
-`x86_64:  5 : 56 --> 57 :  64PB:64PB  : corrected (allows for total of 128 PB)`
-
-`Aarch64: 3 : 39 --> 40 : 512G:512G : corrected (allows for total of 1024 GB = 1 TB)`
-
-`Aarch64: 4 : 48 --> 49 : 256T:256T  : corrected (allows for total of 512 T)`
-
-- pg 385:
-   - 'On high-end enterprise server class systems running the Itanium (IA-64) processor, MAX_ORDER can be as high as 17 (implying a
-largest chunk size on order (17-1), thus of 216 = 65,536 pages = 512 MB chunks of physically contiguous RAM on order 16 of the freelists, for
-a 4 KB page size).'
-should be:
-'On high-end enterprise server class systems running the Itanium (IA-64) processor, MAX_ORDER can be as high as 17 (implying a
-largest chunk size on order (17-1), thus of 216 = 65,536 pages = *256 MB* chunks of physically contiguous RAM on order 16 of the freelists, for
-a 4 KB page size).'
-
-- pg 388:
-    - '... the next available memory chunk is on order 7, of size 256 KB.' should be: '... the next available memory chunk is on order 6, of size 256 KB.
-
-- pg 656: the line
-  'In place of atomic64_dec_if_positive(), use atomic64_dec_if_positive()'
-  should be
-  'In place of atomic_dec_if_positive(), use atomic64_dec_if_positive()'
-(thanks to @xuhw21)
-
-- pg 661:
-    - '... there is a incorrect reference regarding a folder chp15/kthread_simple/kthread. The correct reference should be ch5/kthread_simple/kthread in part 2 of the book's GitHub [[Repository]](https://github.com/PacktPublishing/Linux-Kernel-Programming-Part-2)
-
-- pg 665:
-    - '...In info/Tip: 
-```
-"The material in this section assumes you have at least a base understanding of accessing 
-peripheral device (chip) memory and registers; we have covered this in detail in 
-Chapter 13, Working with Hardware I/O Memory. Please ensure that you understand it before moving forward. 
-```
-should be
-```
-"The material in this section assumes you have at least a base understanding of accessing 
-peripheral device (chip) memory and registers; we have covered this in detail in 
-Linux Kernel Programming Part 2 - Chapter 3, Working with Hardware I/O Memory. 
-Please ensure that you understand it before moving forward."
-```
-* pg 183 : **Wiring to the console** _should be_ **Writing to the console**
-
-### Related products
-* Mastering Linux Device Driver Development [[Packt]](https://www.packtpub.com/product/Mastering-Linux-Device-Driver-Development/9781789342048) [[Amazon]](https://www.amazon.com/Mastering-Linux-Device-Driver-Development/dp/178934204X)
-
-* Hands-On System Programming with Linux [[Packt]](https://www.packtpub.com/in/networking-and-servers/hands-system-programming-linux?utm_source=github&utm_medium=repository&utm_campaign=9781788998475) [[Amazon]](https://www.amazon.com/Hands-System-Programming-Linux-programming-ebook/dp/B079RKKKJ7/ref=sr_1_1?dchild=1&keywords=Hands-On+System+Programming+with+Linux&qid=1614057025&s=books&sr=1-1)
-
-## Get to Know the Author
-**Kaiwan N Billimoria**
-taught himself BASIC programming on his dad's IBM PC back in 1983. He was programming in C and Assembly on DOS until he discovered the joys of Unix, and by around 1997, Linux!
-
-Kaiwan has worked on many aspects of the Linux system programming stack, including Bash scripting, system programming in C, kernel internals, device drivers, and embedded Linux work. He has actively worked on several commercial/FOSS projects. His contributions include drivers to the mainline Linux OS and many smaller projects hosted on GitHub. His Linux passion feeds well into his passion for teaching these topics to engineers, which he has done for well over two decades now. He's also the author of Hands-On System Programming with Linux. It doesn't hurt that he is a recreational ultrarunner too.
-
-## Other books by the authors
-* [Hands-On System Programming with Linux](https://www.packtpub.com/in/networking-and-servers/hands-system-programming-linux?utm_source=github&utm_medium=repository&utm_campaign=9781788998475)
-  
-* * * * 
-### Download a free PDF
-
- <i>If you have already purchased a print or Kindle version of this book, you can get a DRM-free PDF version at no cost.<br>Simply click on the link to claim your free PDF.</i>
-<p align="center"> <a href="https://packt.link/free-ebook/9781789953435">https://packt.link/free-ebook/9781789953435 </a> </p>

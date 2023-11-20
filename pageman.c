@@ -120,7 +120,7 @@ asmlinkage void *fit_and_free(const struct pt_regs *regs)
 		pr_info(MOD_NAME_FIT
 			"%u   0x%lx 0x%lx 0x%lx \t%u \t%lu KB \t%lu KB\n",
 			order, addr_start, addr_mid, addr_end, nr_pages_req,
-			(req_span), (size_span));
+			(req_span / 1024), (size_span / 1024));
 		if (req_span > size_span) {
 			req_span -= size_span;
 			addr_start = addr_mid;
@@ -142,24 +142,25 @@ asmlinkage void *fit_and_free(const struct pt_regs *regs)
 	ktime_get_ts64(&end_time);
 	elapsed_time = timespec64_sub(end_time, start_time).tv_nsec;
 	pr_info(MOD_NAME_FIT
-		"Stats| Fit_size=%lu KB \t Required_pages=%u \tOriginal_pages=%u \tElapse=%llu ns",
-		size / 1024, nr_pages_req, total_nr_pages, elapsed_time);
+		"Stats| Fit_size=%lu KB \t Required_pages=%u \tOriginal_pages=%u \tElapse=%llu ns \n\n",
+		(size / 1024), nr_pages_req, total_nr_pages, elapsed_time);
 	return (void *)start_address;
 }
 
 asmlinkage void (*orig_free_pages_exact)(const struct pt_regs *);
+
 asmlinkage void free_and_fit(const struct pt_regs *regs)
 {
 	orig_free_pages_exact(regs);
 	unsigned long start_address = gb_start_address;
 	if ((void *)start_address == NULL) {
-		pr_info("Free&Fit: Invalid Address\n");
+		pr_info(MOD_NAME_FREE "Invalid Address\n");
 		return;
 	};
 	unsigned int fit_nr_pages =
 		get_nr_pages_metadata(virt_to_page((void *)start_address));
 	if (fit_nr_pages == 0) {
-		pr_info("Free&Fit: Not required\n");
+		pr_info(MOD_NAME_FREE "Not required\n");
 		return;
 	}
 
@@ -175,19 +176,21 @@ asmlinkage void free_and_fit(const struct pt_regs *regs)
 	unsigned long total_nr_pages = 1 << init_order;
 
 	if (fit_nr_pages == total_nr_pages) {
-		pr_info("Free&Fit: Nothing to Fit\n");
+		pr_info(MOD_NAME_FREE "Nothing to Fit\n");
 		return;
 	}
-	pr_info("Free&Fit: Order From\t\t Mid\t\t To\t\t fit_pages\t left_size\t Half_size\n");
+	pr_info(MOD_NAME_FREE
+		"Order From\t\t Mid\t\t To\t\t fit_pages\t left_size\t Half_size\n");
 
 	addr_start = start_address;
 	addr_end = start_address + (total_nr_pages * PAGE_SIZE);
 	while (1) {
 		addr_mid = addr_start / 2 + addr_end / 2;
 		size_span = addr_end - addr_mid;
-		pr_info("Free&Fit: %u   0x%lx 0x%lx 0x%lx \t%u \t%lu KB \t%lu KB\n",
+		pr_info(MOD_NAME_FREE
+			"%u   0x%lx 0x%lx 0x%lx \t%u \t%lu KB \t%lu KB\n",
 			order, addr_start, addr_mid, addr_end, fit_nr_pages,
-			(req_span), (size_span));
+			(req_span / 1024), (size_span / 1024));
 		if (req_span < size_span) {
 			addr_end = addr_mid;
 			order--;
@@ -208,16 +211,28 @@ asmlinkage void free_and_fit(const struct pt_regs *regs)
 	// This is a log to benchmark the process
 	ktime_get_ts64(&end_time);
 	elapsed_time = timespec64_sub(end_time, start_time).tv_nsec;
-	pr_info("Fit&Free: Stats| Free_size=%lu KB \t fit_pages=%u \tMax_pages=%lu \tElapse=%llu ns\n",
+	pr_info(MOD_NAME_FREE
+		"Stats| Free_size=%lu KB \t fit_pages=%u \tMax_pages=%lu \tElapse=%llu ns\n\n",
 		(fit_nr_pages * PAGE_SIZE) / 1024, fit_nr_pages, total_nr_pages,
 		elapsed_time);
 }
 
+/**
+ * This array contains all the hooks to the functions.
+ * We first write the name of the function to hook, followed by the function to be called instead, and an address to the original function which was hooked 
+*/
 static struct ftrace_hook hooks[2] = {
+	// Hook to the function make_alloc_exact by fit_and_free
 	HOOK("make_alloc_exact", fit_and_free, &orig_make_alloc_exact),
+	// Hook to the function free_pages_exact by free_and_fit
 	HOOK("free_pages_exact", free_and_fit, &orig_free_pages_exact)
 };
 
+/**
+ * We initialize the pageman module. 
+ * During the initialization, we insert the hooks into memory and await function calls to that hooked function to take control
+ * Then, we set @is_pageman_loaded to True meaning the hooks have been installed and pageman is ready to work
+*/
 static int __init pageman_init(void)
 {
 	int err;
@@ -226,10 +241,14 @@ static int __init pageman_init(void)
 		return err;
 
 	is_pageman_loaded = true;
-	pr_info("Pageman(F&F): loaded\n");
+	pr_info(MODULE_NAME "Succesfully loaded\n");
 	return 0;
 }
 
+/**
+ * We destroy or uninstall our module including the hooks.
+ * Then make sure we set @is_pageman_loaded to False 
+  */
 static void __exit pageman_exit(void)
 {
 	fh_remove_hooks(hooks, ARRAY_SIZE(hooks));
@@ -238,5 +257,6 @@ static void __exit pageman_exit(void)
 	pr_info("Pageman(F&F): unloaded\n");
 }
 
+// This 2 calls are respectively called when we insert and remove our modules.
 module_init(pageman_init);
 module_exit(pageman_exit);
