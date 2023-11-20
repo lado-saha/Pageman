@@ -47,7 +47,16 @@ MODULE_VERSION("0.01");
 * returns address
 */
 asmlinkage void *fit_and_free(const struct pt_regs *regs);
+
+/**
+ * This is a pointer to the make_alloc_exact function in the kernel. We do this to be able to call the original behavior when ever needed
+ * @pt_regs is the pointer to the registry entry which contains the information about the function. 
+ */
 asmlinkage void *(*orig_make_alloc_exact)(const struct pt_regs *);
+
+/**
+ * This is a pointer to the free_pages_exact function in the kernel which is hooked or intercepted
+ */
 asmlinkage void (*orig_free_pages_exact)(const struct pt_regs *);
 
 /**
@@ -55,23 +64,19 @@ asmlinkage void (*orig_free_pages_exact)(const struct pt_regs *);
 * When ever we intercept a deallocation call on an address which was previously fitted(We know this by verifying if the pfn has a non null entry in the page metadata array).
 * If this is not the case, we do nothing else we execute this function.
 * 1) We get the number of pages allocated from the array and calculate the size (x) KiB of the allocation and required order (n) 
-*   2.0) We calculate the pages allocated which were to be allocated by the buddy allocator by using the fact that it will always allocate (total_nr_pages) 2^n * PAGE_SIZE 
+* 2) We calculate the pages allocated which were to be allocated by the buddy allocator by using the fact that it will always allocate (total_nr_pages) 2^n * PAGE_SIZE 
 *   2.1) We successively divide the address space orignally spanning from (virt to virt + 2^n * PAGE_SIZE) into 2 equals halfs and compare if the left half can fit
 *       the allocated size
-*     2.1.1) In case the size can (not exactly) fit, we free the left half to the required order, consider the address space as the right half, 
-*         In  case the size is exactly fit to the left half, we just free the right half and mark the left as allocated and **stop**
-*     2.1.2) In case the size cannot fit into the left half, we mark the left as allocated then continue on the right half, then reduce the the 
-*         size required by subtracting from it the size of the left half allocated. 
+*     2.1.1) In case the size can (but not exactly) fit, we just consider the left half and continue 
+*         In  case the size can exactly fit to the left half, we just free the left half and  **stop**
+*     2.1.2) In case the size cannot fit into the left half, we free the left half to the required order and reduce the size required to be freed by subtracting
+*         from it the size of the left half freed and continue 
 *     We decreement the order (n--) and restart the subdivision.
-*
-*   2.3) We finally stop and return the initial address of the memory block and at this point we know that we have allocated the minimum number of pages 
-*     required for the size. 
+*   2.2) We finally stop and reset the value of allocated pages in the array at index page frame number of the current address to 0 
 * Complexity O(log2(n)) and in most computers, n = 11 thus 0(1)
 *
-* @regs Eventhough this is unused, this the pointer to the registers of the hooked function orig_make_alloc_exact
-* returns address
+* @regs Eventhough this is unused, this the pointer to the registers of the hooked function orig_free_pages_exact 
 */
-
 asmlinkage void free_and_fit(const struct pt_regs *regs);
 
 asmlinkage void *fit_and_free(const struct pt_regs *regs)
