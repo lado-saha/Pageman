@@ -1,7 +1,7 @@
 /*
  * Helper library for ftrace hooking kernel functions
- * Author: Harvey Phillips (xcellerator@gmx.com)
- * Edited By: @sih
+ * Original Author: Harvey Phillips (xcellerator@gmx.com)
+ * Edited By: Lado Saha (@sih) 
  * License: GPL
  */
 
@@ -50,7 +50,7 @@ static int fh_resolve_hook_address(struct ftrace_hook *hook)
 	hook->address = kallsyms_lookup_name(hook->name);
 
 	if (!hook->address) {
-		printk(KERN_DEBUG "rootkit: unresolved symbol: %s\n",
+		printk(KERN_DEBUG "pageman_hook: unresolved symbol: %s\n",
 		       hook->name);
 		return -ENOENT;
 	}
@@ -106,7 +106,7 @@ int fh_install_hook(struct ftrace_hook *hook)
 	err = ftrace_set_filter_ip(&hook->ops, hook->address, 0, 0);
 	if (err) {
 		printk(KERN_DEBUG
-		       "rootkit: ftrace_set_filter_ip() failed: %d\n",
+		       "pageman_hook: ftrace_set_filter_ip() failed: %d\n",
 		       err);
 		return err;
 	}
@@ -114,7 +114,7 @@ int fh_install_hook(struct ftrace_hook *hook)
 	err = register_ftrace_function(&hook->ops);
 	if (err) {
 		printk(KERN_DEBUG
-		       "rootkit: register_ftrace_function() failed: %d\n",
+		       "pageman_hook: register_ftrace_function() failed: %d\n",
 		       err);
 		return err;
 	}
@@ -132,14 +132,14 @@ void fh_remove_hook(struct ftrace_hook *hook)
 	err = unregister_ftrace_function(&hook->ops);
 	if (err) {
 		printk(KERN_DEBUG
-		       "rootkit: unregister_ftrace_function() failed: %d\n",
+		       "pageman_hook: unregister_ftrace_function() failed: %d\n",
 		       err);
 	}
 
 	err = ftrace_set_filter_ip(&hook->ops, hook->address, 1, 0);
 	if (err) {
 		printk(KERN_DEBUG
-		       "rootkit: ftrace_set_filter_ip() failed: %d\n",
+		       "pageman_hook: ftrace_set_filter_ip() failed: %d\n",
 		       err);
 	}
 }
