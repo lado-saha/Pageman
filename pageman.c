@@ -157,7 +157,7 @@ static int __init pageman_init(void)
 	if (err)
 		return err;
 
-	is_fandf_loaded = true;
+	is_pageman_loaded = true;
 	pr_info("Pageman(F&F): loaded\n");
 	return 0;
 }
@@ -166,7 +166,7 @@ static void __exit pageman_exit(void)
 {
 	fh_remove_hooks(hooks, ARRAY_SIZE(hooks));
 
-	is_fandf_loaded = false;
+	is_pageman_loaded = false;
 	pr_info("Pageman(F&F): unloaded\n");
 }
 

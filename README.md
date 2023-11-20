@@ -172,7 +172,345 @@ python3 scripts/clang-tools/gen_compile_commands.py
 ```
 > NB: Eventhough we didnot use vscode, we found the resource [vscode for kernel dev](https://github.com/neilchennc/vscode-linux-kernel) potentially helpful. It mainly consists in editing the ```c_cpp_properties.json```, ```settings.json```, ```tasks.json```, ```.vscode/``` to recognise the kernel header files
 
+### 4. Tweaking the kernel memory manager source code
+>This section was done with a lot of precaution since any error could make the compilation fail. We made sure to carefully add some functions and global variables necessary for the wee functioning of ``Pageman``.
+- Overall the, the following kernel files were modified
+    - ```~/manager/linux-6.5.3/include/linux/gfp.h```
+    - ```~/manager/linux-6.5.3/mm/page_alloc.c```
+    - ```~/manager/linux-6.5.3/mm/slab_common.c```
 
+For each file, we did specific changes as shown below
+
+- ``gfp.h`` File additions  
+```c
+...
+/* Added fter line 157 in gfp.h*/
+
+/**
+ * A global tracker to know if pageman has been loaded or not 
+ * Becomes true when pageman is loaded and false when unloaded  
+ */
+extern bool is_pageman_loaded;
+/**
+ * A global variables that holds the value of the start of the virtual first page of an allocated or to be deallocated block.
+ * When ever an allocation or deallocation is intercepted, we save the this address.
+ * NB: This address is a the virtual adddress to the page and not the page address
+ */
+extern unsigned long gb_start_address;
+/**
+ * Another global variable that holds the order of an allocated request to the BuddyAllocator
+ * Varies from 0 to MAX_ORDER(generally 11).
+ */
+extern unsigned int gb_order;
+/**
+ * Another global variable that holds the size in Bytes of an allocation request 
+ */
+extern size_t gb_size;
+/**
+ * The size of this array is ideally equals to the total numbers of pages in our RAM. This size is calculated by 
+ * dividing the RAM size by the size of a page. 
+ * e.g array size for 16GB = (16 * 1024 * 1024 KB)/(4096 KB), assuming our pages are 4KB large.  
+ * Since we cannot know the this at compile time, we must set assume a large enough value.
+ *
+ * In practice, this array stores the number of pages that were allocated for each allocation, which permits us 
+ * durring deallocation to know the number of pages which were allocated. The index is the page frame number associated to 
+ * start_address of the allocation block and it is initialized to zeroes at compile time 
+ *
+ * (Warning) There are limits to the size of this array above which the compilation will fail.
+ */
+extern unsigned long pages_metadata_table[3145728];
+/**
+ * This is a helper function called by the allocators to set the global variables 
+ */
+void fit_and_free_injector(unsigned long page_start_addr, unsigned int order, size_t size);
+/**
+ * This is a helper function called by the deallocators to set the start_address of the block to be deallocated
+ */
+void free_and_fit_injector(unsigned long page_start_addr);
+/**
+ * A helper function to know if a page has been allocated by checking if its page frame number(pfn) has a non zero 
+ * value in the array 
+ *
+ * Returns 0 if the page is not currently being allocated
+ * Returns 1 if the page is currently in use or has not been deallocated 
+ */
+extern int get_nr_pages_metadata(struct page *page);
+/**
+ * A helper function to set the number of pages allocated with by a block starting at that pfn 
+ * In summary for a given page, it gets the pfn and uses it as an index to set the number of pages allocated 
+ */
+extern void set_nr_pages_metadata(struct page *page, unsigned short nr_pages);
+....
+```
+- ``page_alloc.c`` File modifications 
+
+Definitions of the global variables and functions defined in gfp.h 
+```c 
+...
+
+/* In page_alloc.c after line 394 */
+
+bool is_pageman_loaded = false;
+unsigned long gb_start_address = 0;
+unsigned int gb_order = 0;
+size_t gb_size = 0;
+unsigned long pages_metadata_table[3145728] = { 0 };
+void fit_and_free_injector(unsigned long page_start_addr, unsigned int order, size_t size)
+{
+	gb_start_address = page_start_addr;
+	gb_size = size;
+	gb_order = order;
+}
+
+void free_and_fit_injector(unsigned long page_start_addr)
+{
+	gb_start_address = page_start_addr;
+}
+
+int get_nr_pages_metadata(struct page *page)
+{
+	unsigned long pfn = page_to_pfn(page);
+	return pages_metadata_table[pfn];
+}
+
+void set_nr_pages_metadata(struct page *page, unsigned short nr_pages)
+{
+	unsigned long pfn = page_to_pfn(page);
+	pages_metadata_table[pfn] = nr_pages;
+}
+ ....
+```
+Modification of the ``alloc_pages_exact`` definition at around line 4791
+
+```c 
+/* In page_alloc.c */
+....
+/**
+ * alloc_pages_exact - allocate an exact number physically-contiguous pages.
+ * @size: the number of bytes to allocate
+ * @gfp_mask: GFP flags for the allocation, must not contain __GFP_COMP
+ *
+ * This function is similar to alloc_pages(), except that it allocates the
+ * minimum number of pages to satisfy the request.  alloc_pages() can only
+ * allocate memory in power-of-two pages.
+ *
+ * This function is also limited by MAX_ORDER.
+ *
+ * Memory allocated by this function must be released by free_pages_exact().
+ *
+ * Return: pointer to the allocated area or %NULL in case of error.
+ */
+void *alloc_pages_exact(size_t size, gfp_t gfp_mask)
+{
+	unsigned int order = get_order(size);
+	unsigned long addr;
+
+	if (WARN_ON_ONCE(gfp_mask & (__GFP_COMP | __GFP_HIGHMEM)))
+		gfp_mask &= ~(__GFP_COMP | __GFP_HIGHMEM);
+
+	addr = __get_free_pages(gfp_mask, order);
+
+	/*
+   * New 
+   * We check if the pageman module is loaded before setting the global variables 
+   */
+	if (is_pageman_loaded) {
+		fit_and_free_injector((unsigned long)addr, order, size);
+	}
+	/* End */
+
+	return make_alloc_exact(addr, order, size);
+}
+....
+```
+
+Modification of the ``alloc_pages_exact_nid`` definition at around line 4791
+
+```c
+/* In page_alloc.c*/
+....
+/**
+ * alloc_pages_exact_nid - allocate an exact number of physically-contiguous
+ *			   pages on a node.
+ * @nid: the preferred node ID where memory should be allocated
+ * @size: the number of bytes to allocate
+ * @gfp_mask: GFP flags for the allocation, must not contain __GFP_COMP
+ *
+ * Like alloc_pages_exact(), but try to allocate on node nid first before falling
+ * back.
+ *
+ * Return: pointer to the allocated area or %NULL in case of error.
+ */
+void *__meminit alloc_pages_exact_nid(int nid, size_t size, gfp_t gfp_mask)
+{
+	unsigned int order = get_order(size);
+	struct page *p;
+
+	if (WARN_ON_ONCE(gfp_mask & (__GFP_COMP | __GFP_HIGHMEM)))
+		gfp_mask &= ~(__GFP_COMP | __GFP_HIGHMEM);
+
+	p = alloc_pages_node(nid, gfp_mask, order);
+	if (!p)
+		return NULL;
+
+	/*
+   * New 
+   * We check if the pageman module is loaded before setting the global variables 
+   */
+	if (is_pageman_loaded) {
+		fit_and_free_injector((unsigned long)page_address(p), order,
+				      size);
+	}
+	/* End */
+
+	return make_alloc_exact((unsigned long)page_address(p), order, size);
+}
+
+....
+```
+Modification of the ``free_pages_exact`` definition around line 4849
+```c 
+/* In page_alloc.c */
+....
+
+/**
+ * free_pages_exact - release memory allocated via alloc_pages_exact()
+ * @virt: the value returned by alloc_pages_exact.
+ * @size: size of allocation, same value as passed to alloc_pages_exact().
+ *
+ * Release the memory allocated by a previous call to alloc_pages_exact.
+ */
+void free_pages_exact(void *virt, size_t size)
+{
+  /**
+   * New 
+   * We check if this pageman is loaded and that this allocation was initially done by pageman 
+   * other wise, we leave the default behavior 
+   */
+	if (is_pageman_loaded &&
+	    get_nr_pages_metadata(virt_to_page(virt)) != 0) {
+		free_and_fit_injector((unsigned long)virt);
+	} else {
+    /* End */
+		unsigned long addr = (unsigned long)virt;
+		unsigned long end = addr + PAGE_ALIGN(size);
+
+		while (addr < end) {
+			free_page(addr);
+			addr += PAGE_SIZE;
+		}
+	}
+}
+....
+```
+- ```slab_common.c``` Modifications 
+Firstly we modify the ```__kmalloc_large_node```(after line 1116) which is called when the allocation size of ```kmalloc``` is too large for any preallocated slab.
+
+```c 
+/* In slab_common.c File after 1116*/
+/*
+ * To avoid unnecessary overhead, we pass through large allocation requests
+ * directly to the page allocator. We use __GFP_COMP, because we will need to
+ * know the allocation order to free the pages properly in kfree.
+ */
+
+static void *__kmalloc_large_node(size_t size, gfp_t flags, int node)
+{
+	struct page *page;
+	void *ptr = NULL;
+	unsigned int order = get_order(size);
+
+	if (unlikely(flags & GFP_SLAB_BUG_MASK))
+		flags = kmalloc_fix_flags(flags);
+
+	flags |= __GFP_COMP;
+	page = alloc_pages_node(node, flags, order);
+	if (page) {
+		ptr = page_address(page);
+		/**
+     * New 
+     * We first check if pageman is loaded, next we make sure the allocation size is not a power of 2 (This is the ideal case)
+     * FInally, we make sure the size allocated is not more than the buddy allocator can handle 
+     * In case everything is ok, we set the global variables and launch the make_alloc_exact function which will later be intercepted by 
+     * pageman and Fit the number of pages
+     *
+     * Else, we use the default behavior ...
+     */
+		if (is_pageman_loaded &&
+		    DIV_ROUND_UP(size, PAGE_SIZE) != 1 << order &&
+		    size < (1 << MAX_ORDER) * PAGE_SIZE) {
+			fit_and_free_injector((unsigned long)ptr, order, size);
+			return make_alloc_exact((unsigned long)ptr, order,
+						size);
+		}
+		/** End **/
+		mod_lruvec_page_state(page, NR_SLAB_UNRECLAIMABLE_B,
+				      PAGE_SIZE << order);
+	}
+
+	ptr = kasan_kmalloc_large(ptr, size, flags);
+	/* As ptr might get tagged, call kmemleak hook after KASAN. */
+	kmemleak_alloc(ptr, size, 1, flags);
+	kmsan_kmalloc_large(ptr, size, flags);
+
+	return ptr;
+}
+```
+Next, we edit the `kmalloc_large`(after line) and `kmalloc_large_node` allocators wrappers to know how to trace the allocations by setting the pages actually allocated in case pageman was active 
+```c
+/* In slab_common.c after line 1158 */
+
+void *kmalloc_large(size_t size, gfp_t flags)
+{
+	void *ret = __kmalloc_large_node(size, flags, NUMA_NO_NODE);
+
+	/** New: 0 if the allocation failed*/
+	unsigned long nr_pages = get_nr_pages_metadata(virt_to_page(ret));
+
+	/**
+   * New 
+   * In case pageman is loaded and the allocation was successfull, we instead trace the  nr_pages actually allocted 
+   */
+	if (is_pageman_loaded && nr_pages != 0) {
+		trace_kmalloc(_RET_IP_, ret, size, nr_pages, flags,
+			      NUMA_NO_NODE);
+		/*End*/
+	} else {
+		trace_kmalloc(_RET_IP_, ret, size, PAGE_SIZE << get_order(size),
+			      flags, NUMA_NO_NODE);
+	}
+	return ret;
+}
+...
+
+```
+```c 
+/** In slab_common.c */
+
+void *kmalloc_large_node(size_t size, gfp_t flags, int node)
+{
+	void *ret = __kmalloc_large_node(size, flags, NUMA_NO_NODE);
+
+	/** New: 0 if the allocation failed*/
+	unsigned long nr_pages = get_nr_pages_metadata(virt_to_page(ret));
+	/**
+   * New 
+   * In case pageman is loaded and the allocation was successfull, we instead trace the nr_pages actually allocted 
+   */
+
+	if (is_pageman_loaded && nr_pages != 0) {
+		trace_kmalloc(_RET_IP_, ret, size, nr_pages, flags, node);
+	/*End*/
+	} else {
+		trace_kmalloc(_RET_IP_, ret, size, PAGE_SIZE << get_order(size),
+			      flags, node);
+	}
+
+	return ret;
+}
+```
+>That marked the end of the modifications in the kernel code. In Summary, introduce hooking points and state savers in the kernel code. All this was in order to make our module function well.
+ 
 ## Results
 
 ## Evaluation
