@@ -207,7 +207,6 @@ asmlinkage void free_and_fit(const struct pt_regs *regs)
 			order--;
 		}
 	}
-
 	// This is a log to benchmark the process
 	ktime_get_ts64(&end_time);
 	elapsed_time = timespec64_sub(end_time, start_time).tv_nsec;
@@ -254,7 +253,7 @@ static void __exit pageman_exit(void)
 	fh_remove_hooks(hooks, ARRAY_SIZE(hooks));
 
 	is_pageman_loaded = false;
-	pr_info("Pageman(F&F): unloaded\n");
+	pr_info(MODULE_NAME "unloaded\n");
 }
 
 // This 2 calls are respectively called when we insert and remove our modules.

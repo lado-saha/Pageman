@@ -1,4 +1,4 @@
-# Linux Memory Manager ```Pageman``` 
+# Linux Memory Manager `Pageman`
 
 |Project Title | Linux Memory Manager |
 |--|--|
@@ -9,24 +9,44 @@
 |Teacher Name   |Pr. Djiotio  |
 |Date           |19 Nov 2023 |
 
-## Table of Contents
-- #### [Abstract](#abstract)
-- #### [Introduction](#introduction)
-- #### [Methodology](#methodology)
-- #### [Implementation](#implementation)
-- ####  [Results](#results)
-- #### [Evaluation](#evaluation)
-- #### [Conclusion](#conclusion)
-- #### [References](#references)
-- #### [Appendices](#appendices)
+<!-- ## Table of Contents -->
 
-## Abstract/Summary
+<!-- - #### [Abstract](#abstract) -->
+
+<!-- - #### [Introduction](#introduction) -->
+
+<!-- - #### [Methodology](#methodology) -->
+
+<!-- - #### [Implementation](#implementation) -->
+
+<!-- - ####  [Results](#results) -->
+
+<!-- - #### [Evaluation](#evaluation) -->
+
+<!-- - #### [Conclusion](#conclusion) -->
+
+<!-- - #### [References](#references) -->
+
+<!-- - #### [Appendices](#appendices) -->
+
+## Abstract {#abstract}
+
+This report introduces **Pageman**, a memory manager designed for Linux systems. Pageman addresses a problem in the freelist buddy allocator used for physical page allocation. The allocator's predefined block sizes create difficulties when allocating memory blocks that don't fit into these sizes, particularly for low-level programs like device drivers and kernel internals which donot have the luxury of relying on virtual contiguous pages.
+
+Existing solutions attempt to reduce fragmentation by trimming allocated blocks and freeing excess memory to a lower order. However, this approach leads to the complete splitting of larger memory blocks over time, making it challenging to allocate higher order contiguous blocks overtime.
+
+In contrast, Pageman offers a novel solution that strikes a balance between reducing fragmentation and preserving higher-order contiguous blocks. By intelligently trimming allocated blocks and retaining unused memory blocks, Pageman improves memory utilization without sacrificing the availability of larger contiguous allocations.
+
+Implemented within the Linux kernel, Pageman has been extensively evaluated and demonstrates its effectiveness in mitigating fragmentation while supporting larger contiguous allocations.
+
+Overall, Pageman provides an enhanced memory management solution for Linux systems. By optimizing memory allocation, it improves system memory management and offers valuable insights for memory management in low-level programs and kernel internals.
 
 ## Introduction
 
 ## Methodology
 
-## Implementation
+## Implementation {#inplementation}
+
 The implementation was done on a linux machine with the following specs
 |Computer|Lenovo Thinkpad T460s|
 |--|--|
@@ -42,8 +62,10 @@ The implementation was done on a linux machine with the following specs
 The project was carried out on a custom built **linux kernel version 6.5.3.**
 
 ### 0. Prerequisites
+
 The following steps were carried out to setup the system
- ```bash
+
+```bash
 # The following libraries were installed during the setup process
 
 # Updating the system libraries
@@ -60,12 +82,16 @@ sudo apt install git gcc make perl
 sudo apt-get install libncurses-dev flex bison openssl libssl-dev dkms libelf-dev libudev-dev libpci-dev libiberty-dev autoconf
 sudo apt install dwarves
 ```
+
 ### 1. Building a Linux kernel from source
-- Download and extraction of the kernel 
-``` bash
+
+- Download and extraction of the kernel
+
+```bash
 # Changing to the home directory and creating our working directory manager
 cd ~
-mkdir manager
+mkdir manager 
+cd manager
 
 # Download the kernel archive file
 wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.5.3.tar.xz
@@ -76,7 +102,9 @@ tar -xf manager/linux-6.5.3.tar.xz
 # Navigating to the kernel code 
 cd manager/linux-6.5.3
 ```
+
 - Building the kernel image and modules
+
 ```bash
 # Copying the current system modules in an attempt to build a clone
 sudo lsmod > /tmp/lsmod.now
@@ -84,20 +112,24 @@ sudo lsmod > /tmp/lsmod.now
 # After putting our terminal in fullscreen, we edit the configuration of our kernel 
 make menuconfig
 ```
-The last command opens a minimalist menu driven interface to tweak some of the kernel configurations. 
 
----
-NB: The following keys are used in the menuconfig (non exhaustive)
+The last command opens a minimalist menu driven interface to tweak some of the kernel configurations.
+
+______________________________________________________________________
+
+ NB: The following keys are used in the menuconfig (non exhaustive) 
+
 |Keyboard Key | Meaning | Visual Effect|
-|--|---|--|
-|y| Enable| * |
-|n| Disable| n |
+|--|---|--| 
+|y| Enable| * | 
+|n| Disable| n | 
 |m| Enable as module| m |
-|Esc(x2)| Navigate back | |
-|Up, Down| Scroll Up, Down| |
+|Esc(x2)| Navigate back | 
+|Up, Down| Scroll Up, Down| 
 |Left, Right| Navigate about the menu| Highlights the Exit, Save, Load options|
----
-The table below contains the different configurations which were done to the kernel 
+
+The table below contains the different configurations which were done to the kernel
+
 
 |Feature| Info |Path in menu |Precise config option |New value|
 |--|--|--|--|--|
@@ -111,8 +143,7 @@ The table below contains the different configurations which were done to the ker
 |Security LSMs | Turn off kernel LSMs (Not safe for production environments) | Security options / Enable different security models | CONFIG_SECURITY | n|
 |Kernel debug: stack utilization info | Have full debuf info about the memory | Kernel hacking / Memory Debugging / Stack utilization instrumentation | CONFIG_DEBUG_STACK-USAGE| y |
 
-- After applying all the configuration above we saved and left the menu. We then proceseded by disabling some securities and were finally ready to build the kernel. Th e building process took 45 minutes and was very CPU and memory Intensive 
-
+- After applying all the configuration above we saved and left the menu. We then proceseded by disabling some securities and were finally ready to build the kernel. Th e building process took 45 minutes and was very CPU and memory Intensive
 
 > ⚠️ **Warning:** Any interruption like sleeping or shutdown during the compilation process may lead to a complete corruption of the current system GUI and internal components . Thus we made sure our computer could not sleep and was well powered.
 
@@ -126,8 +157,11 @@ scripts/config --disable SYSTEM_TRUSTED_KEYS
 # For parallel compilations, we used -j4 which allocates 4 cores 
 make LSMOD=/tmp/lsmod.now -j4
 ```
-### 3. Setting up the Editing environment 
+
+### 3. Setting up the Editing environment
+
 - We used the [neovim](https://github.com/neovim/neovim/wiki/Installing-Neovim#linux) editor. The basic installation was done using the following commands.
+
 ```bash
 # Navigate to the home directory
 cd ~
@@ -148,14 +182,17 @@ sudo ln -s /squashfs-root/AppRun /usr/bin/nvim
 # Finally, we can run the editor using the command below from any where
 nvim
 ```
-After installing neovim, some setup process was needed to make it suitable for editing C code, and the resource below was of great help 
+
+After installing neovim, some setup process was needed to make it suitable for editing C code, and the resource below was of great help
 
 [![The perfect Neovim Setup for C++](https://img.youtube.com/vi/lsFoZIg-oDs/0.jpg)](https://www.youtube.com/watch?v=lsFoZIg-oDs)
 
 > Another option could have been the Code editor [vscode](https://code.visualstudio.com/docs/setup/linux). In that case, we could have installed the C/C++ extensions from Microsoft and the Linux Kernel extensions.
 
-- After setting up the code editor for vanilla C code, we had make sure it understood we were dealing with Linux kernel code and could include Kernel header files. This was done beacuse the linux kernel does not use the standard gcc library. The setup was as follows. 
+- After setting up the code editor for vanilla C code, we had make sure it understood we were dealing with Linux kernel code and could include Kernel header files. This was done beacuse the linux kernel does not use the standard gcc library. The setup was as follows.
+
 > The [StackOverflow thread](https://stackoverflow.com/questions/33676829/vim-configuration-for-linux-kernel-development) was of great help
+
 ```bash
 # Navigate to the kernel code 
 cd ~/manager/linux-6.5.3 
@@ -170,18 +207,22 @@ make O=. ARCH=x86_64 COMPILED_SOURCE=1 cscope tags
 # Next, we generated the following json file to inform our editor about some compiling options.
 python3 scripts/clang-tools/gen_compile_commands.py
 ```
-> NB: Eventhough we didnot use vscode, we found the resource [vscode for kernel dev](https://github.com/neilchennc/vscode-linux-kernel) potentially helpful. It mainly consists in editing the ```c_cpp_properties.json```, ```settings.json```, ```tasks.json```, ```.vscode/``` to recognise the kernel header files
+
+> NB: Eventhough we didnot use vscode, we found the resource [vscode for kernel dev](https://github.com/neilchennc/vscode-linux-kernel) potentially helpful. It mainly consists in editing the `c_cpp_properties.json`, `settings.json`, `tasks.json`, `.vscode/` to recognise the kernel header files
 
 ### 4. Tweaking the kernel memory manager source code
->This section was done with a lot of precaution since any error could make the compilation fail. We made sure to carefully add some functions and global variables necessary for the wee functioning of ``Pageman``.
+
+> This section was done with a lot of precaution since any error could make the compilation fail. We made sure to carefully add some functions and global variables necessary for the wee functioning of `Pageman`.
+
 - Overall the, the following kernel files were modified
-    - ```~/manager/linux-6.5.3/include/linux/gfp.h```
-    - ```~/manager/linux-6.5.3/mm/page_alloc.c```
-    - ```~/manager/linux-6.5.3/mm/slab_common.c```
+  - `~/manager/linux-6.5.3/include/linux/gfp.h`
+  - `~/manager/linux-6.5.3/mm/page_alloc.c`
+  - `~/manager/linux-6.5.3/mm/slab_common.c`
 
 For each file, we did specific changes as shown below
 
-- ``gfp.h`` File additions  
+- `gfp.h` File additions
+
 ```c
 ...
 /* Added fter line 157 in gfp.h*/
@@ -242,10 +283,12 @@ extern int get_nr_pages_metadata(struct page *page);
 extern void set_nr_pages_metadata(struct page *page, unsigned short nr_pages);
 ....
 ```
-- ``page_alloc.c`` File modifications 
 
-Definitions of the global variables and functions defined in gfp.h 
-```c 
+- `page_alloc.c` File modifications
+
+Definitions of the global variables and functions defined in gfp.h
+
+```c
 ...
 
 /* In page_alloc.c after line 394 */
@@ -280,9 +323,10 @@ void set_nr_pages_metadata(struct page *page, unsigned short nr_pages)
 }
  ....
 ```
-Modification of the ``alloc_pages_exact`` definition at around line 4791
 
-```c 
+Modification of the `alloc_pages_exact` definition at around line 4791
+
+```c
 /* In page_alloc.c */
 ....
 /**
@@ -324,7 +368,7 @@ void *alloc_pages_exact(size_t size, gfp_t gfp_mask)
 ....
 ```
 
-Modification of the ``alloc_pages_exact_nid`` definition at around line 4791
+Modification of the `alloc_pages_exact_nid` definition at around line 4791
 
 ```c
 /* In page_alloc.c*/
@@ -368,8 +412,10 @@ void *__meminit alloc_pages_exact_nid(int nid, size_t size, gfp_t gfp_mask)
 
 ....
 ```
-Modification of the ``free_pages_exact`` definition around line 4849
-```c 
+
+Modification of the `free_pages_exact` definition around line 4849
+
+```c
 /* In page_alloc.c */
 ....
 
@@ -403,10 +449,11 @@ void free_pages_exact(void *virt, size_t size)
 }
 ....
 ```
-- ```slab_common.c``` Modifications 
-Firstly we modify the ```__kmalloc_large_node```(after line 1116) which is called when the allocation size of ```kmalloc``` is too large for any preallocated slab.
 
-```c 
+- `slab_common.c` Modifications
+  Firstly we modify the `__kmalloc_large_node`(after line 1116) which is called when the allocation size of `kmalloc` is too large for any preallocated slab.
+
+```c
 /* In slab_common.c File after 1116*/
 /*
  * To avoid unnecessary overhead, we pass through large allocation requests
@@ -456,7 +503,9 @@ static void *__kmalloc_large_node(size_t size, gfp_t flags, int node)
 	return ptr;
 }
 ```
-Next, we edit the `kmalloc_large`(after line) and `kmalloc_large_node` allocators wrappers to know how to trace the allocations by setting the pages actually allocated in case pageman was active 
+
+Next, we edit the `kmalloc_large`(after line) and `kmalloc_large_node` allocators wrappers to know how to trace the allocations by setting the pages actually allocated in case pageman was active
+
 ```c
 /* In slab_common.c after line 1158 */
 
@@ -484,7 +533,8 @@ void *kmalloc_large(size_t size, gfp_t flags)
 ...
 
 ```
-```c 
+
+```c
 /** In slab_common.c */
 
 void *kmalloc_large_node(size_t size, gfp_t flags, int node)
@@ -509,18 +559,49 @@ void *kmalloc_large_node(size_t size, gfp_t flags, int node)
 	return ret;
 }
 ```
->That marked the end of the modifications in the kernel code. In Summary, introduce hooking points and state savers in the kernel code. All this was in order to make our module function well.
 
-### 5. Implementing the Pageman Module 
+> That marked the end of the modifications in the kernel code. In Summary, introduce hooking points and state savers in the kernel code. All this was in order to make our module function well.
+
+### 5. Booting from our kernel
+
+- After editing our kernel source files, we were required to boot from it before implementing our module.
+
+> It was noted that after running the commands below, the system booted automatically from our own kernel. This was confirmed by using `uname -r` command.
+
+```bash
+# In ~/manager/linux-6.5.3/ 
+# We rebuilt the kernel 
+make -j4
+
+# After building the kernel, we build the modules which we once copied to /tmp/lsmod.now
+sudo make modules_install
+
+# Finally, we tell the system to boot with the new kernel 
+sudo make install
+
+# Editing the grub timeout time 
+cd /etc/default/
+# Opening the grub file and increasing the GRUB_TIMEOUT to 5 using nano, vim or any othe editor
+nano grub 
+
+# After closing and saving our work, we rebooted
+sudo reboot
+```
+
+- When the PC failed to reboot, we navigated through the grub menu advanced options to choose the previous kernel.
+  Otherwise, we were ready to implemented the Pageman
+
+### 6. Implementing the Pageman Module
+
 As stated before, the the main purpose of the pageman module is to intercept all allocations which makes a call to the `make_alloc_exact`(found in `~/manager/linux-6.5.3/mm/page_alloc.c`) and all deallocations which makes a call to `free_pages_exact` which are the APIs we modified in above. After a call is make to the `make_alloc_exact`, we intercept it and use the global varibles to Fit the allocation or the deallocation size.
 
 The process of Fitting can be summarized as allocating the minimum number of pages required followed by freeing the rest in the case of an allocation and freeing only the required number of pages to a particular order during a deallocation.
 
-We implimented our module as follows 
+We implimented our module as follows
 
-- To begin, we created the module files as follows 
+- To begin, we created the module files as follows
 
-```bash 
+```bash
 # We created the module in the kernel source code location to get code intellisense out of the box 
 cd ~/manager/linux-6.5.3/ 
 
@@ -535,8 +616,10 @@ touch ./pageman.c
 # Also added a header file for easy hooking 
 touch ./ftrace_helper.h
 ```
-- We implimented `Makefile` as follows. 
-```Makefile 
+
+- We implimented `Makefile` as follows.
+
+```Makefile
 # In Makefile
 
 # A simple Makefile to compile the module 
@@ -550,7 +633,7 @@ clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
 ```
 
-- Next, we implemented the `ftrace_helper.h` to facilitate the hooking (greatly inspired by the resource [TheXcellerator](https://xcellerator.github.io/posts/linux_rootkits_02/)) as follows 
+- Next, we implemented the `ftrace_helper.h` to facilitate the hooking (greatly inspired by the resource [TheXcellerator](https://xcellerator.github.io/posts/linux_rootkits_02/)) as follows
 
 ```c
 /*
@@ -732,7 +815,10 @@ void fh_remove_hooks(struct ftrace_hook *hooks, size_t count)
 ```
 
 - Finally we implemented the main module `pageman.c` as follows. The code was well documented
-```c 
+
+```c
+/** In pageman.c **/
+
 #include "asm/page.h"
 #include "asm/ptrace.h"
 #include "linux/linkage.h"
@@ -996,12 +1082,70 @@ static void __exit pageman_exit(void)
 module_init(pageman_init);
 module_exit(pageman_exit);
 ```
+
+### 6. Insterting and running Pageman
+
+Pageman could be inserted at boot time or later. The safer option was to insert it at runtime before finally inserting at boot time
+
+- Inserting Pageman after boot
+
+```bash
+# In file ~/manager/linux-6.5.3/pageman/ 
+# Compiling Pageman and generating the module file (pageman.ko)
+make all
+
+# Insertion of the module 
+sudo insmod pageman.ko 
+
+# Verifying the insertion was successfull was in one part done by querying the list of loaded modules for `pageman`
+lsmod | grep pageman 
+
+# Seeing the actions of Pageman from its log messages 
+sudo dmesg 
+
+# Or to watch it live updates and exit with (Ctrl+C) 
+sudo dmesg -w
+
+# Removing the module  
+sudo rmmod pageman 
+```
+
+- Inserting Pageman during boot
+
+To do this, we had proceeded as follows
+
+```bash
+# Navigate to the modules-load.d directory 
+cd /etc/modules-load.d
+
+# Append our module name to the `module.conf` file
+sudo cat pageman >> modules.conf 
+
+# Next, we navigate to a convinient location to copy our <module_name>.ko file  
+# We chose to add it to the /acpi directory but any other choice is valid 
+cd ~/manager/linux-6.5.3/pageman 
+make clean 
+make 
+sudo cp pageman.ko /lib/modules/6.5.3/drivers/acpi
+
+# Finally, we rebuid the modules index 
+sudo depmod
+
+# Then we can reboot the computer and test 
+sudo reboot
+
+# To undo the chages, we just do the reverse 
+# i.e removing our module name and module.ko file then running `sudo depmod`
+```
+
+This wrapped up the implementation of pageman. After this, we noticed the following results
+
 ## Results
+
+After the implementation, we could admire the results of our pageman module hijacking the normal linux page allocator. We took several screenshots from boot right up to shit down
 
 ## Evaluation
 
 ## Conclusion
 
 ## References
-
-
