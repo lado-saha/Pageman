@@ -10,6 +10,7 @@
 |Date           |19 Nov 2023 |
 
 ## Table of Contents
+
 <!-- toc -->
 
 - [Abstract](#abstract)
@@ -22,7 +23,7 @@
   * [4. Tweaking the kernel memory manager source code](#4-tweaking-the-kernel-memory-manager-source-code)
   * [5. Booting from our kernel](#5-booting-from-our-kernel)
   * [6. Implementing the Pageman Module](#6-implementing-the-pageman-module)
-  * [6. Insterting and running Pageman](#6-insterting-and-running-pageman)
+  * [7. Insterting and running Pageman](#7-insterting-and-running-pageman)
 - [Results](#results)
 - [Evaluation](#evaluation)
 - [Conclusion](#conclusion)
