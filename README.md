@@ -150,12 +150,12 @@ The table below contains the different configurations which were done to the ker
 ```bash
 # ~/manger/linux-6.5.3
 # Disabling some debian specific security keys 
-scripts/config --disable SYSTEM_REVOCATION_KEYS
-scripts/config --disable SYSTEM_TRUSTED_KEYS
+sudo scripts/config --disable SYSTEM_REVOCATION_KEYS
+sudo scripts/config --disable SYSTEM_TRUSTED_KEYS
 
 # Building the kernel and specifying the modules to install 
 # For parallel compilations, we used -j4 which allocates 4 cores 
-make LSMOD=/tmp/lsmod.now -j4
+make LSMOD=/tmp/lsmod.now localmodconfig -j4
 ```
 
 ### 3. Setting up the Editing environment

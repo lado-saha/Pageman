@@ -73,7 +73,7 @@ def evaluate_algorithm(log_file_path):
 
     # Print report
     print("Pageman Report (By LADO SAHA)")
-    print(f"{uptime_info}")
+    print(f"uptime: {uptime_info}")
     print("------")
     print(f"Fit Interception count: {len(saved_pages)}")
     print(f"Free Interception count: {len(time_elapsed_on_free)}\n")
