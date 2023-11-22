@@ -9,6 +9,27 @@
 |Teacher Name   |Pr. Djiotio  |
 |Date           |19 Nov 2023 |
 
+## Table of Contents
+<!-- toc -->
+
+- [Abstract](#abstract)
+- [Introduction](#introduction)
+- [Methodology](#methodology)
+- [Implementation](#implementation)
+  * [0. Prerequisites](#0-prerequisites)
+  * [1. Building a Linux kernel from source](#1-building-a-linux-kernel-from-source)
+  * [3. Setting up the Editing environment](#3-setting-up-the-editing-environment)
+  * [4. Tweaking the kernel memory manager source code](#4-tweaking-the-kernel-memory-manager-source-code)
+  * [5. Booting from our kernel](#5-booting-from-our-kernel)
+  * [6. Implementing the Pageman Module](#6-implementing-the-pageman-module)
+  * [6. Insterting and running Pageman](#6-insterting-and-running-pageman)
+- [Results](#results)
+- [Evaluation](#evaluation)
+- [Conclusion](#conclusion)
+- [References](#references)
+
+<!-- tocstop -->
+
 <!-- ## Table of Contents -->
 
 <!-- - #### [Abstract](#abstract) -->
@@ -29,8 +50,7 @@
 
 <!-- - #### [Appendices](#appendices) -->
 
-## Abstract {#abstract}
-
+## Abstract 
 This report introduces **Pageman**, a memory manager designed for Linux systems. Pageman addresses a problem in the freelist buddy allocator used for physical page allocation. The allocator's predefined block sizes create difficulties when allocating memory blocks that don't fit into these sizes, particularly for low-level programs like device drivers and kernel internals which donot have the luxury of relying on virtual contiguous pages.
 
 Existing solutions attempt to reduce fragmentation by trimming allocated blocks and freeing excess memory to a lower order. However, this approach leads to the complete splitting of larger memory blocks over time, making it challenging to allocate higher order contiguous blocks overtime.
@@ -45,7 +65,7 @@ Overall, Pageman provides an enhanced memory management solution for Linux syste
 
 ## Methodology
 
-## Implementation {#inplementation}
+## Implementation
 
 The implementation was done on a linux machine with the following specs
 |Computer|Lenovo Thinkpad T460s|
@@ -1083,7 +1103,7 @@ module_init(pageman_init);
 module_exit(pageman_exit);
 ```
 
-### 6. Insterting and running Pageman
+### 7. Insterting and running Pageman
 
 Pageman could be inserted at boot time or later. The safer option was to insert it at runtime before finally inserting at boot time
 
