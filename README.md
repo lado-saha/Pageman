@@ -302,6 +302,14 @@ extern int get_nr_pages_metadata(struct page *page);
  * In summary for a given page, it gets the pfn and uses it as an index to set the number of pages allocated 
  */
 extern void set_nr_pages_metadata(struct page *page, unsigned short nr_pages);
+
+/* 
+ * We make the original make_alloc_exact function to become an `extern function` to avoid double declaration
+ * We also must change the definition of this function in the file
+ */
+extern void *make_alloc_exact(unsigned long addr, unsigned int order,
+			      size_t size);
+
 ....
 ```
 
@@ -469,6 +477,35 @@ void free_pages_exact(void *virt, size_t size)
 	}
 }
 ....
+```
+
+- Remove the static keyword from `make_alloc_exact` definition around line 4575  
+
+```C 
+/* In page_alloc.c around line 4575 */
+
+/**
+ * We just made the make_alloc_exact to become an extern function to avoid double definition
+ */
+void *make_alloc_exact(unsigned long addr, unsigned int order,
+		size_t size)
+{
+	if (addr) {
+		unsigned long nr = DIV_ROUND_UP(size, PAGE_SIZE);
+		struct page *page = virt_to_page((void *)addr);
+		struct page *last = page + nr;
+
+		split_page_owner(page, 1 << order);
+		split_page_memcg(page, 1 << order);
+		while (page < --last)
+			set_page_refcounted(last);
+
+		last = page + (1UL << order);
+		for (page += nr; page < last; page++)
+			__free_pages_ok(page, 0, FPI_TO_TAIL);
+	}
+	return (void *)addr;
+}
 ```
 
 - `slab_common.c` Modifications
