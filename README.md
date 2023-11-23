@@ -1,114 +1,172 @@
 # Linux Memory Manager `Pageman`
 
-|Project Title | Linux Memory Manager |
-|--|--|
-|Name           |LADO SAHA|
-|ID             |21P296|
-|Class          |3GI|
-|Subject| Operating System|
-|Teacher Name   |Pr. Djiotio  |
-|Date           |23 Nov 2023 |
+| Project Title | Linux Memory Manager |
+|---------------|----------------------|
+| Name          | LADO SAHA            |
+| ID            | 21P296               |
+| Class         | 3GI                  |
+| Subject       | Operating System     |
+| Teacher Name  | Pr. Djiotio          |
+| Date          | 23 Nov 2023          |
 
 ## Table of Contents
 
-<!-- toc -->
+<!-- TOC -->
 
-- [Abstract](#abstract)
-- [Introduction](#introduction)
-- [Methodology](#methodology)
-- [Implementation](#implementation)
-  - [0. Prerequisites](#0-prerequisites)
-  - [1. Building a Linux kernel from source](#1-building-a-linux-kernel-from-source)
-  - [3. Setting up the Editing environment](#3-setting-up-the-editing-environment)
-  - [4. Tweaking the kernel memory manager source code](#4-tweaking-the-kernel-memory-manager-source-code)
-  - [5. Booting from our kernel](#5-booting-from-our-kernel)
-  - [6. Implementing the Pageman Module](#6-implementing-the-pageman-module)
-  - [7. Insterting and running Pageman](#7-insterting-and-running-pageman)
-- [Results](#results)
-- [Evaluation](#evaluation)
-- [Conclusion](#conclusion)
-- [Aritcles & Resources](#aritcles--resources)
+* [Linux Memory Manager `Pageman`](#linux-memory-manager-pageman)
+    * [Table of Contents](#table-of-contents)
+    * [Abstract](#abstract)
+    * [Introduction](#introduction)
+    * [Methodology](#methodology)
+    * [Implementation](#implementation)
+        * [0. Prerequisites](#0-prerequisites)
+        * [1. Building a Linux kernel from source](#1-building-a-linux-kernel-from-source)
+        * [3. Setting up the Editing environment](#3-setting-up-the-editing-environment)
+        * [4. Tweaking the kernel memory manager source code](#4-tweaking-the-kernel-memory-manager-source-code)
+        * [5. Booting from our kernel](#5-booting-from-our-kernel)
+        * [6. Implementing the Pageman Module](#6-implementing-the-pageman-module)
+        * [7. Inserting and running Pageman](#7-inserting-and-running-pageman)
+    * [Results](#results)
+    * [Evaluation](#evaluation)
+    * [Conclusion](#conclusion)
+    * [Articles & Resources](#articles--resources)
 
-<!-- tocstop -->
+<!-- TOC -->
 
 ## Abstract
 
-This report introduces **Pageman**, a memory manager designed for Linux systems. Pageman addresses a problem in the freelist buddy allocator used for physical page allocation. The allocator's predefined block sizes create difficulties when allocating memory blocks that don't fit into these sizes, particularly for low-level programs like device drivers and kernel internals which donot have the luxury of relying on virtual contiguous pages.
+This report introduces **Pageman**, a memory manager designed for Linux systems. Pageman addresses a
+problem in the freelist buddy allocator used for physical page allocation. The allocator's
+predefined block sizes create difficulties when allocating memory blocks that don't fit into these
+sizes, particularly for low-level programs like device drivers and kernel internals which donot have
+the luxury of relying on virtual contiguous pages.
 
-Existing solutions attempt to reduce fragmentation by trimming allocated blocks and freeing excess memory to a lower order. However, this approach leads to the complete splitting of larger memory blocks over time, making it challenging to allocate higher order contiguous blocks overtime.
+Existing solutions attempt to reduce fragmentation by trimming allocated blocks and freeing excess
+memory to a lower order. However, this approach leads to the complete splitting of larger memory
+blocks over time, making it challenging to allocate higher order contiguous blocks overtime.
 
-In contrast, Pageman offers a novel solution that strikes a balance between reducing fragmentation and preserving higher-order contiguous blocks. By intelligently trimming allocated blocks and retaining unused memory blocks, Pageman improves memory utilization without sacrificing the availability of larger contiguous allocations.
+In contrast, Pageman offers a novel solution that strikes a balance between reducing fragmentation
+and preserving higher-order contiguous blocks. By intelligently trimming allocated blocks and
+retaining unused memory blocks, Pageman improves memory utilization without sacrificing the
+availability of larger contiguous allocations.
 
-Implemented within the Linux kernel, Pageman has been extensively evaluated and demonstrates its effectiveness in mitigating fragmentation while supporting larger contiguous allocations.
+Implemented within the Linux kernel, Pageman has been extensively evaluated and demonstrates its
+effectiveness in mitigating fragmentation while supporting larger contiguous allocations.
 
-Overall, Pageman provides an enhanced memory management solution for Linux systems. By optimizing memory allocation, it improves system memory management and offers valuable insights for memory management in low-level programs and kernel internals.
+Overall, Pageman provides an enhanced memory management solution for Linux systems. By optimizing
+memory allocation, it improves system memory management and offers valuable insights for memory
+management in low-level programs and kernel internals.
 
 ## Introduction
 
-Memory management is a critical aspect of operating systems, and the Linux operating system employs a sophisticated memory management subsystem known as the Linux Memory Manager (Linux MM) to efficiently handle memory allocation and deallocation. Within Linux MM, various memory allocation techniques are utilized to optimize memory utilization and system performance.
+Memory management is a critical aspect of operating systems, and the Linux operating system employs
+a sophisticated memory management subsystem known as the Linux Memory Manager (Linux MM) to
+efficiently handle memory allocation and reallocation. Within Linux MM, various memory allocation
+techniques are utilized to optimize memory utilization and system performance.
 
-One prominent memory allocation technique utilized in Linux is the freelist buddy allocator. This allocator organizes memory into fixed-size blocks and maintains a freelist structure containing linked lists of contiguous memory blocks. However, an inherent challenge faced by the freelist buddy allocator is the issue of internal fragmentation. Internal fragmentation occurs when allocated memory blocks are larger than the requested size, resulting in wasted memory within the blocks and decreased overall memory utilization efficiency.
+One prominent memory allocation technique utilized in Linux is the freelist buddy allocator. This
+allocator organizes memory into fixed-size blocks and maintains a freelist structure containing
+linked lists of contiguous memory blocks. However, an inherent challenge faced by the freelist buddy
+allocator is the issue of internal fragmentation. Internal fragmentation occurs when allocated
+memory blocks are larger than the requested size, resulting in wasted memory within the blocks and
+decreased overall memory utilization efficiency.
 
-To mitigate the problem of internal fragmentation, Linux incorporates another memory allocator known as the slab allocator. The slab allocator focuses on the efficient management of small, variable-sized objects by grouping them into caches. By allocating memory in fixed-sized slabs tailored to the object size, the slab allocator reduces internal fragmentation and minimizes wasted memory. However, the slab allocator does have limitations when it comes to allocating large contiguous blocks of memory.
+To mitigate the problem of internal fragmentation, Linux incorporates another memory allocator known
+as the slab allocator. The slab allocator focuses on the efficient management of small,
+variable-sized objects by grouping them into caches. By allocating memory in fixed-sized slabs
+tailored to the object size, the slab allocator reduces internal fragmentation and minimizes wasted
+memory. However, the slab allocator does have limitations when it comes to allocating large
+contiguous blocks of memory.
 
-In 2008, an patch was made to address the allocation of large contiguous blocks through the introduction of the `alloc_page_exact` solution in the page allocator API. However, this solution inadvertently resulted in a problem where large blocks that did not fit into individual pages were broken, leading to a scarcity of large contiguous blocks over time. This scarcity poses challenges for applications and low-level programs that require such memory regions.
+In 2008, an patch was made to address the allocation of large contiguous blocks through the
+introduction of the `alloc_page_exact` solution in the page allocator API. However, this solution
+inadvertently resulted in a problem where large blocks that did not fit into individual pages were
+broken, leading to a scarcity of large contiguous blocks over time. This scarcity poses challenges
+for applications and low-level programs that require such memory regions.
 
-The current problem we aim to address in this report is finding a balance between reducing internal fragmentation without significantly increasing the scarcity of large contiguous blocks. It is crucial to optimize memory utilization and system performance by minimizing wasted memory while still ensuring the availability of larger contiguous memory regions.
+The current problem we aim to address in this report is finding a balance between reducing internal
+fragmentation without significantly increasing the scarcity of large contiguous blocks. It is
+crucial to optimize memory utilization and system performance by minimizing wasted memory while
+still ensuring the availability of larger contiguous memory regions.
 
-Throughout this report, we will delve into the concepts of the freelist buddy allocator, the slab allocator, the challenges introduced by the alloc_page_exact solution, and the trade-offs between reducing internal fragmentation and the scarcity of large contiguous blocks. By addressing these challenges, our goal is to enhance memory management in Linux, improving overall system performance and efficiency.
+Throughout this report, we will delve into the concepts of the freelist buddy allocator, the slab
+allocator, the challenges introduced by the alloc_page_exact solution, and the trade-offs between
+reducing internal fragmentation and the scarcity of large contiguous blocks. By addressing these
+challenges, our goal is to enhance memory management in Linux, improving overall system performance
+and efficiency.
 
-The subsequent sections of this report will provide a detailed analysis of the freelist buddy allocator, the slab allocator, the implications of the alloc_page_exact solution, and propose strategies for mitigating internal fragmentation while preserving the availability of large contiguous memory blocks. Through this research, we aim to contribute to the advancement of memory management techniques in Linux, benefiting a wide range of applications, low-level programs, and overall system performance.
+The subsequent sections of this report will provide a detailed analysis of the freelist buddy
+allocator, the slab allocator, the implications of the alloc_page_exact solution, and propose
+strategies for mitigating internal fragmentation while preserving the availability of large
+contiguous memory blocks. Through this research, we aim to contribute to the advancement of memory
+management techniques in Linux, benefiting a wide range of applications, low-level programs, and
+overall system performance.
 
 ## Methodology
 
-At its core, Pageman is a memory manger in the sense that it does not do the allocation but just manages the allocations. It instead sits over the Buddy allocator and intercepts any allocation of pages which can be trimmed or fitted. In a similar manner, when it detects any block previously fitted requesting to be freed, it intervenes to free it in an orderly manner to different orders in the freelist.
+At its core, Pageman is a memory manger in the sense that it does not do the allocation but just
+manages the allocations. It instead sits over the Buddy allocator and intercepts any allocation of
+pages which can be trimmed or fitted. In a similar manner, when it detects any block previously
+fitted requesting to be freed, it intervenes to free it in an orderly manner to different orders in
+the freelist.
 
-Pageman uses two pretty similar algorithms which are the **Fit&Free** during the allocation and the **Free&Fit** during the free stage. To better understand, we will place ourselves in a general scenario. Before we proceed, we need to define some variables and functions which we will be used below.
+Pageman uses two pretty similar algorithms which are the **Fit&Free** during the allocation and the
+**Free&Fit** during the free stage. To better understand, we will place ourselves in a general
+scenario. Before we proceed, we need to define some variables and functions which we will be used
+below.
 
-|variable|Full Name |Type|Meaning|
-|--|--|--|--|
-|S|Size|Integer| It represents the size in Bytes of the requested allocation|
-|n|Order|Integer| It represents the nearest power of 2 for which is greater than or equals to the size|
-|@A|Address|Pointer| It represents the address of the start of the allocated block|
-|S_pg|Size of a RAM PAGE|Number| This is the size of a RAM page|
-|Np|Total Number of pages|Number| This refers to the 2^n or the number of pages which were allocated by the buddy allocator|
-|Np_req (or Np_r)|Number of Required Pages|Number| This refers to the minimum amount of pages to fit the allocation size|
-|S_req|Required Size| Number| This is the Size of the block minimum the amount of page required|
-|S_mid|Half size span| Number| This is half of the size of block|
+| variable               | Full Name                | Type    | Meaning                                                                              |
+|------------------------|--------------------------|---------|--------------------------------------------------------------------------------------|
+| S                      | Size                     | Integer | It represents the size in Bytes of the requested allocation                          |
+| n                      | Order                    | Integer | It represents the nearest power of 2 for which is greater than or equals to the size |
+| @A                     | Address                  | Pointer | It represents the address of the start of the allocated block                        |
+| S_pg                   | Size of a RAM PAGE       | Number  | This is the size of a RAM page                                                       |
+| Np                     | Total Number of pages    | Number  | This refers to the 2^n or the number of pages which were allocated                   |
+| by the buddy allocator |                          |         |                                                                                      |
+| Np_req (or Np_r)       | Number of Required Pages | Number  | This refers to the minimum amount of pages to fit                                    |
+| the allocation size    |                          |         |                                                                                      |
+| S_req                  | Required Size            | Number  | This is the Size of the block minimum the amount of page required                    |
+| S_mid                  | Half size span           | Number  | This is half of the size of block                                                    |
 
-|Function|Argument1|Argument2|Use|
-|--|--|--|--|
-|ceil|Real Number||Returns the smallest integer greater than the argument|
-|FREE|Pointer|Order|Frees from the address given to a freelist at a particular order|
+| Function | Argument1   | Argument2                                              | Use                                                              |
+|----------|-------------|--------------------------------------------------------|------------------------------------------------------------------|
+| ceil     | Real Number | Returns the smallest integer greater than the argument |
+| FREE     | Pointer     | Order                                                  | Frees from the address given to a freelist at a particular order |
 
-A call to the `alloc_pages_exact`, `alloc_pages_exact`, `__kmalloc_large_node` from the kernel subsystems i.e all page allocation apis which takes in a size as parameter. We proceed as follows.
+A call to the `alloc_pages_exact`, `alloc_pages_exact`, `__kmalloc_large_node` from the kernel
+subsystems i.e all page allocation apis which takes in a size as parameter. We proceed as follows.
 
-![Fit&Free Algorithm](./pics/fit.png)
+![Fit&Free](./pics/fit.png)
 
-- We can note that we continually half the allocated block till while freeing the unused blocks to their ideal order till we are left with a number of pages which can be allocated
+- We can note that we continually half the allocated block till while freeing the unused blocks to
+  their ideal order till we are left with a number of pages which can be allocated
 - If the minimum number of pages is equals to the allocated number, we donot do anything.
 
-Analogously, any call to `free_pages_exact`, `kfree` from the kernel subsystems i.e Any page freeing APIs, we first check if we trimmed the blocked to be freed and in that case, we launch the Free&Fit algorithm as shown below.
+Analogously, any call to `free_pages_exact`, `kfree` from the kernel subsystems i.e Any page freeing
+APIs, we first check if we trimmed the blocked to be freed and in that case, we launch the Free&Fit
+algorithm as shown below.
 
 ![Free&Fit](./pics/free.png)
 
-- We can note that  we half the allocated space and free it to its ideal order until we are done
+- We can note that we half the allocated space and free it to its ideal order until we are done
 
-Here we reach the end of this rather short introduction and finally talk about the implementation of the whole system.
+Here we reach the end of this rather short introduction and finally talk about the implementation of
+the whole system.
 
 ## Implementation
 
 The implementation was done on a linux machine with the following specs
-|Computer|Lenovo Thinkpad T460s|
-|--|--|
-|Firmware version| N1CET89W (1.57)|
-|Memory|12.0GiB|
-|Processor|Intel® Core™ i7-6600U × 4|
-|Graphics|Intel® HD Graphics 520 (SKL GT2)|
-|Disk Capacity|2TB|
-|Linux Distro|Ubuntu 23.04|
-|OS Type|64-bit|
-|Kernel Version| Linux 6.2.0-20-generic|
+
+| Computer         | Lenovo Thinkpad T459s            |
+|------------------|----------------------------------|
+| Firmware version | N1CET89W (1.57)                  |
+| Memory           | 12.0GiB                          |
+| Processor        | Intel® Core™ i7-6600U × 4        |
+| Graphics         | Intel® HD Graphics 520 (SKL GT2) |
+| Disk Capacity    | 2TB                              |
+| Linux Distro     | Ubuntu 23.04                     |
+| OS Type          | 64-bit                           |
+| Kernel Version   | Linux 6.2.0-20-generic           |
 
 The project was carried out on a custom built **linux kernel version 6.5.3.**
 
@@ -164,38 +222,47 @@ sudo lsmod > /tmp/lsmod.now
 make menuconfig
 ```
 
-The last command opens a minimalist menu driven interface to tweak some of the kernel configurations.
+The last command opens a minimalist menu driven interface to tweak some of the kernel
+configurations.
 
 ______________________________________________________________________
 
 NB: The following keys are used in the menuconfig (non exhaustive)
 
-|Keyboard Key | Meaning | Visual Effect|
-|--|---|--|
-|y| Enable| * |
-|n| Disable| n |
-|m| Enable as module| m |
-|Esc(x2)| Navigate back |
-|Up, Down| Scroll Up, Down|
-|Left, Right| Navigate about the menu| Highlights the Exit, Save, Load options|
+| Keyboard Key | Meaning                 | Visual Effect                           |
+|--------------|-------------------------|-----------------------------------------|
+| y            | Enable                  | *                                       |
+| n            | Disable                 | n                                       |
+| m            | Enable as module        | m                                       |
+| Esc(x2)      | Navigate back           |
+| Up, Down     | Scroll Up, Down         |
+| Left, Right  | Navigate about the menu | Highlights the Exit, Save, Load options |
 
 The table below contains the different configurations which were done to the kernel
 
-|Feature| Info |Path in menu |Precise config option |New value|
-|--|--|--|--|--|
-|Kernel config Support| Allows us to see the current kernel config details | General Setup/ Kernel .config support | CONFIG_IKCONFIG |y|
-| |Allows us to see current kernel configuration details via the **procfs**|General Setup/ Enable access to .config through the /proc/config.gz | CONFIG_IKCONFIG_PROC | n|
-|Kernel profiling| Kernel profiling support | General Setup / Profiling support| CONFIG_PROFILING | n|
-|HAM RADIO | Support for the HAM radio | Networking support/ Amateur Radio support| CONFIG_HAMRAIO|y|
-|Userspace IO | UIO support | Device Drivers / Userspace I/O Drivers | CONFIG_UIO | m|
-| |UIO platform driver with generic IRQ(Interrupt handler Request) handling | Device Drivers / Userspace I/O Drivers / Userspace I/O platform driver with generic IRQ handling| CONFIG_UIO_PDRV_GENIRQ|m|
-|MS-DOS filesystem support |Mount NTFS drives| File systems / DOS/FAT/NT Filesystems / MSDOS fs support |CONFIG_MSDOS_FS | m|
-|Security LSMs | Turn off kernel LSMs (Not safe for production environments) | Security options / Enable different security models | CONFIG_SECURITY | n|
-|Kernel debug: stack utilization info | Have full debuf info about the memory | Kernel hacking / Memory Debugging / Stack utilization instrumentation | CONFIG_DEBUG_STACK-USAGE| y |
+| Feature                              | Info                                                                     | Path in menu                                                                                     | Precise config option    | New value |
+|--------------------------------------|--------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|--------------------------|-----------|
+| Kernel config Support                | Allows us to see the current kernel config details                       | General Setup/ Kernel .config support                                                            | CONFIG_IKCONFIG          | y         |
+|                                      | Allows us to see current kernel configuration details via the **procfs** | General Setup/ Enable access to .config through the /proc/config.gz                              | CONFIG_IKCONFIG_PROC     | n         |
+| Kernel profiling                     | Kernel profiling support                                                 | General Setup / Profiling support                                                                | CONFIG_PROFILING         | n         |
+| HAM RADIO                            | Support for the HAM radio                                                | Networking support/ Amateur Radio support                                                        | CONFIG_HAMRAIO           | y         |
+| Userspace IO                         | UIO support                                                              | Device Drivers / Userspace I/O Drivers                                                           | CONFIG_UIO               | m         |
+|                                      | UIO platform driver with generic IRQ(Interrupt handler Request) handling | Device Drivers / Userspace I/O Drivers / Userspace I/O platform driver with generic IRQ handling | CONFIG_UIO_PDRV_GENIRQ   | m         |
+| MS-DOS filesystem support            | Mount NTFS drives                                                        | File systems / DOS/FAT/NT Filesystems / MSDOS fs support                                         | CONFIG_MSDOS_FS          | m         |
+| Security LSMs                        | Turn off kernel LSMs (Not safe for production environments)              | Security options / Enable different security models                                              | CONFIG_SECURITY          | n         |
+| Kernel debug: stack utilization info | Have full debug info about the memory                                    | Kernel hacking / Memory Debugging / Stack utilization instrumentation                            | CONFIG_DEBUG_STACK-USAGE | y         |
 
-- After applying all the configuration above we saved and left the menu. We then proceseded by disabling some securities and were finally ready to build the kernel. Th e building process took 45 minutes and was very CPU and memory Intensive
+- After applying all the configuration above we saved and left the menu. We then processed by
+  disabling some securities and were finally ready to build the kernel. Th e building process took
+  45 minutes and was very CPU and memory Intensive
 
-> **Warning:** Any interruption like sleeping or shutdown during the compilation process may lead to a complete corruption of the current system GUI and internal components . Thus we made sure our computer could not sleep and was well powered.
+- After applying all the configuration above we saved and left the menu. We then processed by
+  disabling some securities and were finally ready to build the kernel. Th e building process took
+  45 minutes and was very CPU and memory Intensive
+
+> **Warning:** Any interruption like sleeping or shutdown during the compilation process may lead to
+> a complete corruption of the current system GUI and internal components . Thus we made sure our
+> computer could not sleep and was well powered.
 
 ```bash
 # ~/manger/linux-6.5.3
@@ -210,7 +277,8 @@ make LSMOD=/tmp/lsmod.now localmodconfig -j4
 
 ### 3. Setting up the Editing environment
 
-- We used the [neovim](https://github.com/neovim/neovim/wiki/Installing-Neovim#linux) editor. The basic installation was done using the following commands.
+- We used the [neovim](https://github.com/neovim/neovim/wiki/Installing-Neovim#linux) editor. The
+  basic installation was done using the following commands.
 
 ```bash
 # Navigate to the home directory
@@ -233,15 +301,22 @@ sudo ln -s /squashfs-root/AppRun /usr/bin/nvim
 nvim
 ```
 
-After installing neovim, some setup process was needed to make it suitable for editing C code, and the resource below was of great help
+After installing neovim, some setup process was needed to make it suitable for editing C code, and
+the resource below was of great help
 
-[![The perfect Neovim Setup for C++](https://img.youtube.com/vi/lsFoZIg-oDs/0.jpg)](https://www.youtube.com/watch?v=lsFoZIg-oDs)
+[The perfect Neovim Setup for C++](https://www.youtube.com/watch?v=lsFoZIg-oDs)
 
-> Another option could have been the Code editor [vscode](https://code.visualstudio.com/docs/setup/linux). In that case, we could have installed the C/C++ extensions from Microsoft and the Linux Kernel extensions.
+> Another option could have been the Code
+> editor [vscode](https://code.visualstudio.com/docs/setup/linux). In that case, we could have
+> installed the C/C++ extensions from Microsoft and the Linux Kernel extensions.
 
-- After setting up the code editor for vanilla C code, we had make sure it understood we were dealing with Linux kernel code and could include Kernel header files. This was done beacuse the linux kernel does not use the standard gcc library. The setup was as follows.
+- After setting up the code editor for vanilla C code, we had make sure it understood we were
+  dealing with Linux kernel code and could include Kernel header files. This was done beacuse the
+  linux kernel does not use the standard gcc library. The setup was as follows.
 
-> The [StackOverflow thread](https://stackoverflow.com/questions/33676829/vim-configuration-for-linux-kernel-development) was of great help
+>
+The [StackOverflow thread](https://stackoverflow.com/questions/33676829/vim-configuration-for-linux-kernel-development)
+was of great help
 
 ```bash
 # Navigate to the kernel code 
@@ -251,31 +326,37 @@ cd ~/manager/linux-6.5.3
 sudo apt install cscope exuberant-ctags
 
 # Creating an index database for easy navigation and code intelisense 
-# We index only indexed the x86_64 architecture directories since we had no need for cross platform and our computer was an x86 64bit computer 
+# We index only indexed the x86_64 architecture directories since we had no need for cross
+ platform and our computer was an x86 64bit computer 
 make O=. ARCH=x86_64 COMPILED_SOURCE=1 cscope tags
 
 # Next, we generated the following json file to inform our editor about some compiling options.
 python3 scripts/clang-tools/gen_compile_commands.py
 ```
 
-> NB: Eventhough we didnot use vscode, we found the resource [vscode for kernel dev](https://github.com/neilchennc/vscode-linux-kernel) potentially helpful. It mainly consists in editing the `c_cpp_properties.json`, `settings.json`, `tasks.json`, `.vscode/` to recognise the kernel header files
+> NB: Even though we didn't use vscode, we found the
+> resource [vscode for kernel dev](https://github.com/neilchennc/vscode-linux-kernel) potentially
+> helpful. It mainly consists in editing
+> the `c_cpp_properties.json`, `settings.json`, `tasks.json`, `.vscode/` to recognise the kernel
+> header files
 
 ### 4. Tweaking the kernel memory manager source code
 
-> This section was done with a lot of precaution since any error could make the compilation fail. We made sure to carefully add some functions and global variables necessary for the wee functioning of `Pageman`.
+> This section was done with a lot of precaution since any error could make the compilation fail. We
+> made sure to carefully add some functions and global variables necessary for the wee functioning
+> of `Pageman`.
 
 - Overall the, the following kernel files were modified
-  - `~/manager/linux-6.5.3/include/linux/gfp.h`
-  - `~/manager/linux-6.5.3/mm/page_alloc.c`
-  - `~/manager/linux-6.5.3/mm/slab_common.c`
-  - `~/manager/linux-6.5.3/kernel/kallsyms.c`
+    - `~/manager/linux-6.5.3/include/linux/gfp.h`
+    - `~/manager/linux-6.5.3/mm/page_alloc.c`
+    - `~/manager/linux-6.5.3/mm/slab_common.c`
+    - `~/manager/linux-6.5.3/kernel/kallsyms.c`
 
 For each file, we did specific changes as shown below
 
 - `gfp.h` File additions
 
 ```c
-...
 /* Added fter line 157 in gfp.h*/
 
 /**
@@ -552,7 +633,8 @@ void *make_alloc_exact(unsigned long addr, unsigned int order,
 ```
 
 - `slab_common.c` Modifications
-  Firstly we modify the `__kmalloc_large_node`(after line 1116) which is called when the allocation size of `kmalloc` is too large for any preallocated slab.
+  Firstly we modify the `__kmalloc_large_node`(after line 1116) which is called when the allocation
+  size of `kmalloc` is too large for any pre-allocated slab.
 
 ```c
 /* In slab_common.c File after 1116*/
@@ -577,9 +659,12 @@ static void *__kmalloc_large_node(size_t size, gfp_t flags, int node)
 		ptr = page_address(page);
 		/**
      * New 
-     * We first check if pageman is loaded, next we make sure the allocation size is not a power of 2 (This is the ideal case)
-     * FInally, we make sure the size allocated is not more than the buddy allocator can handle 
-     * In case everything is ok, we set the global variables and launch the make_alloc_exact function which will later be intercepted by 
+     * We first check if pageman is loaded, next we make sure the allocation size
+	  is not a power of 2 (This is the ideal case)
+     * FInally, we make sure the size allocated is not more than the buddy allocator
+	  can handle 
+     * In case everything is ok, we set the global variables and launch the make_alloc_exact 
+	 function which will later be intercepted by 
      * pageman and Fit the number of pages
      *
      * Else, we use the default behavior ...
@@ -605,7 +690,8 @@ static void *__kmalloc_large_node(size_t size, gfp_t flags, int node)
 }
 ```
 
-Next, we edit the `kmalloc_large`(after line) and `kmalloc_large_node` allocators wrappers to know how to trace the allocations by setting the pages actually allocated in case pageman was active
+Next, we edit the `kmalloc_large`(after line) and `kmalloc_large_node` allocators wrappers to know
+how to trace the allocations by setting the pages actually allocated in case pageman was active
 
 ```c
 /* In slab_common.c after line 1158 */
@@ -660,6 +746,7 @@ void *kmalloc_large_node(size_t size, gfp_t flags, int node)
 	return ret;
 }
 ```
+
 - Modifications in the `kallsyms.c`
 
 ```C 
@@ -673,13 +760,17 @@ EXPORT_SYMBOL_GPL(kallsyms_on_each_symbol);
 .....
 
 ```
-> That marked the end of the modifications in the kernel code. In Summary, introduce hooking points and state savers in the kernel code. All this was in order to make our module function well.
+
+> That marked the end of the modifications in the kernel code. In Summary, introduce hooking points
+> and state savers in the kernel code. All this was in order to make our module function well.
 
 ### 5. Booting from our kernel
 
-- After editing our kernel source files, we were required to boot from it before implementing our module.
+- After editing our kernel source files, we were required to boot from it before implementing our
+  module.
 
-> It was noted that after running the commands below, the system booted automatically from our own kernel. This was confirmed by using `uname -r` command.
+> It was noted that after running the commands below, the system booted automatically from our own
+> kernel. This was confirmed by using `uname -r` command.
 
 ```bash
 # In ~/manager/linux-6.5.3/ 
@@ -701,14 +792,21 @@ nano grub
 sudo reboot
 ```
 
-- When the PC failed to reboot, we navigated through the grub menu advanced options to choose the previous kernel.
+- When the PC failed to reboot, we navigated through the grub menu advanced options to choose the
+  previous kernel.
   Otherwise, we were ready to implemented the Pageman
 
 ### 6. Implementing the Pageman Module
 
-As stated before, the the main purpose of the pageman module is to intercept all allocations which makes a call to the `make_alloc_exact`(found in `~/manager/linux-6.5.3/mm/page_alloc.c`) and all deallocations which makes a call to `free_pages_exact` which are the APIs we modified in above. After a call is make to the `make_alloc_exact`, we intercept it and use the global varibles to Fit the allocation or the deallocation size.
+As stated before, the the main purpose of the pageman module is to intercept all allocations which
+makes a call to the `make_alloc_exact`(found in `~/manager/linux-6.5.3/mm/page_alloc.c`) and all
+deallocations which makes a call to `free_pages_exact` which are the APIs we modified in above.
+After a call is make to the `make_alloc_exact`, we intercept it and use the global varibles to Fit
+the allocation or the deallocation size.
 
-The process of Fitting can be summarized as allocating the minimum number of pages required followed by freeing the rest in the case of an allocation and freeing only the required number of pages to a particular order during a deallocation.
+The process of Fitting can be summarized as allocating the minimum number of pages required followed
+by freeing the rest in the case of an allocation and freeing only the required number of pages to a
+particular order during a deallocation.
 
 We implimented our module as follows
 
@@ -746,7 +844,8 @@ clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
 ```
 
-- Next, we implemented the `ftrace_helper.h` to facilitate the hooking (greatly inspired by the resource [TheXcellerator](https://xcellerator.github.io/posts/linux_rootkits_02/)) as follows
+- Next, we implemented the `ftrace_helper.h` to facilitate the hooking (greatly inspired by the
+  resource [TheXcellerator](https://xcellerator.github.io/posts/linux_rootkits_02/)) as follows
 
 ```c
 /*
@@ -957,34 +1056,51 @@ MODULE_VERSION("0.01");
 #define MOD_NAME_FREE MODULE_NAME "(Free): "
 
 /**
-* The fit and free function is responsible for trimming down the number of allocated pages to the minimum possible size, 
-* then carefully frees the excess pages in such a way not to completely decompose higher orders to order 0.
-* When ever we intercept an allocation call with a size (x) KB, of order (n), and starting virtual address (virt) we proceed as follows:
-* 1) Ideal Case: x can be written as a 2^n times PAGE_SIZE e.g x=128KiB, x=1024KiB etc, we donot do anything 
-* 2) Worst Case: x cannot be written as 2^n times PAGE_SIZE e,g x=129KiB, x=1000KiB etc we intervene. 
-*   2.0) We calculate the pages allocated by the buddy allocator by using the fact that it will always allocate (total_nr_pages) 2^n * PAGE_SIZE 
-*   2.1) We calculate the minimum amount of pages which can fit the size (nr_pages_req) by finding the upper bound of x/PAGE_SIZE 
-*   2.1) We successively divide the address space orignally spanning from (virt to virt + 2^n * PAGE_SIZE) into 2 equals halfs and compare if the left half can fit
+* then carefully frees the excess pages in such a way not to completely 
+decompose higher orders to order 0.
+* The fit and free function is responsible for trimming down the number 
+of allocated pages to the minimum possible size, 
+* When ever we intercept an allocation call with a size (x) KB, of order 
+(n), and starting virtual address (virt) we proceed as follows:
+* 1) Ideal Case: x can be written as a 2^n times PAGE_SIZE e.g x=128KiB, 
+x=1024KiB etc, we donot do anything 
+* 2) Worst Case: x cannot be written as 2^n times PAGE_SIZE e,g x=129KiB,
+ x=1000KiB etc we intervene. 
+*   2.0) We calculate the pages allocated by the buddy allocator by using
+ the fact that it will always allocate (total_nr_pages) 2^n * PAGE_SIZE 
+*   2.1) We calculate the minimum amount of pages which can fit the size 
+(nr_pages_req) by finding the upper bound of x/PAGE_SIZE 
+*   2.1) We successively divide the address space orignally spanning from 
+(virt to virt + 2^n * PAGE_SIZE) into 2 equals halfs and compare if the left half can fit
 *       the size 
-*     2.1.1) In case the size can (not exactly) fit, we free right half to the required order, consider the address space as the left half, 
-*         In  case the size is exactly fit to the left half, we just free the right half and mark the left as allocated and **stop**
-*     2.1.2) In case the size cannot fit into the left half, we mark the left as allocated then continue on the right half, then reduce the the 
-*         size required by subtracting from it the size of the left half allocated. 
+*     2.1.1) In case the size can (not exactly) fit, we free right half to
+ the required order, consider the address space as the left half, 
+*         In  case the size is exactly fit to the left half, we just free 
+the right half and mark the left as allocated and **stop**
+*     2.1.2) In case the size cannot fit into the left half, we mark the 
+left as allocated then continue on the right half, then reduce the the 
+*         size required by subtracting from it the size of the left half 
+allocated. 
 *     We decreement the order (n--) and restart the subdivision.
 *
-*   2.3) We finally stop, save the number of pages allocated in the pages_metadata array at address the page frame number of the address
-*     and return the initial address of the memory block and at this point we know that we have allocated the minimum number of pages 
+*   2.3) We finally stop, save the number of pages allocated in the 
+pages_metadata array at address the page frame number of the address
+*     and return the initial address of the memory block and at this
+ point we know that we have allocated the minimum number of pages 
 *     required for the size.  
 * Complexity O(log2(n)) and in most computers, n = 11 thus 0(1)
 *
-* @regs Eventhough this is unused, this the pointer to the registers of the hooked function orig_make_alloc_exact
+* @regs Eventhough this is unused, this the pointer to the registers 
+of the hooked function orig_make_alloc_exact
 * returns address
 */
 asmlinkage void *fit_and_free(const struct pt_regs *regs);
 
 /**
- * This is a pointer to the make_alloc_exact function in the kernel. We do this to be able to call the original behavior when ever needed
- * @pt_regs is the pointer to the registry entry which contains the information about the function. 
+ * This is a pointer to the make_alloc_exact function in the kernel. We do this 
+ to be able to call the original behavior when ever needed
+ * @pt_regs is the pointer to the registry entry which contains the information
+  about the function. 
  */
 asmlinkage void *(*orig_make_alloc_exact)(const struct pt_regs *);
 
@@ -995,18 +1111,24 @@ asmlinkage void (*orig_free_pages_exact)(const struct pt_regs *);
 
 /**
 * The free and fit function is responsible for freeing the previously fitted pages. 
-* When ever we intercept a deallocation call on an address which was previously fitted(We know this by verifying if the pfn has a non null entry in the page metadata array).
+* When ever we intercept a deallocation call on an address which was previously fitted
+(We know this by verifying if the pfn has a non null entry in the page metadata array).
 * If this is not the case, we do nothing else we execute this function.
-* 1) We get the number of pages allocated from the array and calculate the size (x) KiB of the allocation and required order (n) 
-* 2) We calculate the pages allocated which were to be allocated by the buddy allocator by using the fact that it will always allocate (total_nr_pages) 2^n * PAGE_SIZE 
-*   2.1) We successively divide the address space orignally spanning from (virt to virt + 2^n * PAGE_SIZE) into 2 equals halfs and compare if the left half can fit
+* 1) We get the number of pages allocated from the array and calculate the size (x) 
+KiB of the allocation and required order (n) 
+* 2) We calculate the pages allocated which were to be allocated by the buddy allocator 
+by using the fact that it will always allocate (total_nr_pages) 2^n * PAGE_SIZE 
+*   2.1) We successively divide the address space orignally spanning from (virt to virt + 2^n * PAGE_SIZE)
+ into 2 equals halfs and compare if the left half can fit
 *       the allocated size
 *     2.1.1) In case the size can (but not exactly) fit, we just consider the left half and continue 
 *         In  case the size can exactly fit to the left half, we just free the left half and  **stop**
-*     2.1.2) In case the size cannot fit into the left half, we free the left half to the required order and reduce the size required to be freed by subtracting
+*     2.1.2) In case the size cannot fit into the left half, we free the left half to the
+ required order and reduce the size required to be freed by subtracting
 *         from it the size of the left half freed and continue 
 *     We decreement the order (n--) and restart the subdivision.
-*   2.2) We finally stop and reset the value of allocated pages in the array at index page frame number of the current address to 0 
+*   2.2) We finally stop and reset the value of allocated pages in the array at index page
+ frame number of the current address to 0 
 * Complexity O(log2(n)) and in most computers, n = 11 thus 0(1)
 *
 * @regs Eventhough this is unused, this the pointer to the registers of the hooked function orig_free_pages_exact 
@@ -1153,7 +1275,8 @@ asmlinkage void free_and_fit(const struct pt_regs *regs)
 
 /**
  * This array contains all the hooks to the functions.
- * We first write the name of the function to hook, followed by the function to be called instead, and an address to the original function which was hooked 
+ * We first write the name of the function to hook, followed by the function to be
+  called instead, and an address to the original function which was hooked 
 */
 static struct ftrace_hook hooks[2] = {
 	// Hook to the function make_alloc_exact by fit_and_free
@@ -1196,9 +1319,10 @@ module_init(pageman_init);
 module_exit(pageman_exit);
 ```
 
-### 7. Insterting and running Pageman
+### 7. Inserting and running Pageman
 
-Pageman could be inserted at boot time or later. The safer option was to insert it at runtime before finally inserting at boot time
+Pageman could be inserted at boot time or later. The safer option was to insert it at runtime before
+finally inserting at boot time
 
 - Inserting Pageman after boot
 
@@ -1210,7 +1334,7 @@ make all
 # Insertion of the module 
 sudo insmod pageman.ko 
 
-# Verifying the insertion was successfull was in one part done by querying the list of loaded modules for `pageman`
+# Verifying the insertion was successfully was in one part done by querying the list of loaded modules for `pageman`
 lsmod | grep pageman 
 
 # Seeing the actions of Pageman from its log messages 
@@ -1255,7 +1379,9 @@ This wrapped up the implementation of pageman. After this, we noticed the follow
 
 ## Results
 
-After the implementation, we could admire the results of our pageman module hijacking the normal linux page allocator. By consulting kernel log messages we were able to get the following screenshots
+After the implementation, we could admire the results of our pageman module hijacking the normal
+linux page allocator. By consulting kernel log messages we were able to get the following
+screenshots
 
 ![Shot1](./pics/shot_0.png)
 ![Shot1](./pics/shot_2.png)
@@ -1266,7 +1392,8 @@ After the implementation, we could admire the results of our pageman module hija
 
 ## Evaluation
 
-To evaluate our algorithm, we created a small python script `statman` aimed at calculating the total amount of pages saved and the time taken to do so.
+To evaluate our algorithm, we created a small python script `statman` aimed at calculating the total
+amount of pages saved and the time taken to do so.
 
 - Implementation of statman
 
@@ -1276,7 +1403,8 @@ Pageman Profiler Documentation
 By LADO SAHA
 
 
-The Pageman Profiler is a tool that analyzes the performance of the Pageman algorithm using system logs. It calculates statistics to evaluate memory savings and time overhead.
+The Pageman Profiler is a tool that analyzes the performance of the Pageman algorithm using system
+ logs. It calculates statistics to evaluate memory savings and time overhead.
 
 Statistics Calculated
 ---------------------
@@ -1313,8 +1441,10 @@ def evaluate_algorithm(log_file_path):
     logs = output.decode('utf-8')
 
     for line in logs.split("\n"):
-        match_fit = re.search(r"Stats\|\s*Fit_size=(\d+)\s+KB\s+Required_pages=(\d+)\s+Original_pages=(\d+)\s+Elapse=(\d+)\s+ns", line)
-        match_free = re.search(r"Stats\|\s*Free_size=(\d+)\s+KB\s+fit_pages=(\d+)\s+Max_pages=(\d+)\s+Elapse=(\d+)\s+ns", line)
+        match_fit = re.search(r"Stats\|\s*Fit_size=(\d+)\s+KB\s+Required_pages=(\d+) \
+		\s+Original_pages=(\d+)\s+Elapse=(\d+)\s+ns", line)
+        match_free = re.search(r"Stats\|\s*Free_size=(\d+)\s+KB\s+fit_pages=(\d+)\s+ \
+		Max_pages=(\d+)\s+Elapse=(\d+)\s+ns", line)
 
         if match_fit:
             required_pages = int(match_fit.group(2))
@@ -1369,27 +1499,33 @@ cd ~/manager/linux-6.5.3/pageman/
 python3 statman.py
 ```
 
-- It is worth noting that it in order to appreciate the effect of Pageman, we need to run it after having the PC on for a long time.
-- As an example, executing this simple evaluator on a machine with an uptime of 1hr  yields the following results
+- It is worth noting that it in order to appreciate the effect of Pageman, we need to run it after
+  having the PC on for a long time.
+- As an example, executing this simple evaluator on a machine with an uptime of 1hr yields the following results
+  
   ![Statman Results](./pics/statman_.png)
 
 ## Conclusion
 
-The main difficulty faced during this project was the scarce resource about the exact project topic but this led us to go out of scope and gather more fundamental knowledge.
+The main difficulty faced during this project was the scarce resource about the exact project topic
+but this led us to go out of scope and gather more fundamental knowledge.
 
-This project was indeed a great opportunity to get a solid foundation of the linux internals. Eventhough the solution we proposed has been lightly tested, we am certain that it has potentials and could be expanded upon to concieve a better memory management system equiped in all systems .
+This project was indeed a great opportunity to get a solid foundation of the linux internals.
+Even though the solution we proposed has been lightly tested, we am certain that it has potentials
+and could be expanded upon to conceive a better memory management system equiped in all systems .
 
 Thank
 
-## Aritcles & Resources
+## Articles & Resources
 
 1. Billimoria, K. N. (2020). Linux Kernel Programming. Apress.
-1. TheXcellerator. (2020, August 26). Linux Rootkits Part 2: Ftrace and Function Hooking. Retrieved from https://xcellerator.github.io/posts/linux_rootkits_02/
-1. Bing AI
-1. Poe.com
-1. [Reducing fragmentation through better allocation](https://lwn.net/Articles/121600/)
-1. [Linux Kernel vs. Memory Fragmentation (Part I)](http://highscalability.com/blog/2021/6/8/linux-kernel-vs-memory-fragmentation-part-i.html)
-1. [Difference between Internal and External fragmentation](https://www.geeksforgeeks.org/difference-between-internal-and-external-fragmentation/)
-1. [Active memory defragmentation](https://lwn.net/Articles/105021/)
-1. [Kernel memory management: where do I begin?](https://stackoverflow.com/questions/33447708/kernel-memory-management-where-do-i-begin)
-1. Memory management articles [Here](https://lwn.net/Articles/121600/)
+2. TheXcellerator. (2020, August 26). Linux Rootkits Part 2: Ftrace and Function Hooking. Retrieved
+   from https://xcellerator.github.io/posts/linux_rootkits_02/
+3. Bing AI
+4. Poe.com
+5. [Reducing fragmentation through better allocation](https://lwn.net/Articles/121600/)
+6. [Linux Kernel vs. Memory Fragmentation (Part I)](http://highscalability.com/blog/2021/6/8/linux-kernel-vs-memory-fragmentation-part-i.html)
+7. [Difference between Internal and External fragmentation](https://www.geeksforgeeks.org/difference-between-internal-and-external-fragmentation/)
+8. [Active memory defragmentation](https://lwn.net/Articles/105021/)
+9. [Kernel memory management: where do I begin?](https://stackoverflow.com/questions/33447708/kernel-memory-management-where-do-i-begin)
+10. Memory management articles [Here](https://lwn.net/Articles/121600/)
