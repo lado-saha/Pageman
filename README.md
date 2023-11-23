@@ -12,6 +12,7 @@
 ## Table of Contents
 
 <!-- toc -->
+
 - [Abstract](#abstract)
 - [Introduction](#introduction)
 - [Methodology](#methodology)
@@ -26,7 +27,8 @@
 - [Results](#results)
 - [Evaluation](#evaluation)
 - [Conclusion](#conclusion)
-- [References](#references)
+- [Aritcles & Resources](#aritcles--resources)
+
 <!-- tocstop -->
 
 ## Abstract 
@@ -1352,4 +1354,4 @@ Thank
 7. [Difference between Internal and External fragmentation](https://www.geeksforgeeks.org/difference-between-internal-and-external-fragmentation/)
 8. [Active memory defragmentation](https://lwn.net/Articles/105021/)
 9. [Kernel memory management: where do I begin?](https://stackoverflow.com/questions/33447708/kernel-memory-management-where-do-i-begin)
-10. Memory management articles [Here](https://lwn.net/Articles/121600/) 
+10. Memory management articles [Here](https://lwn.net/Articles/121600/)
