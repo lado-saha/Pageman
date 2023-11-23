@@ -12,7 +12,6 @@
 ## Table of Contents
 
 <!-- toc -->
-
 - [Abstract](#abstract)
 - [Introduction](#introduction)
 - [Methodology](#methodology)
@@ -28,28 +27,7 @@
 - [Evaluation](#evaluation)
 - [Conclusion](#conclusion)
 - [References](#references)
-
 <!-- tocstop -->
-
-<!-- ## Table of Contents -->
-
-<!-- - #### [Abstract](#abstract) -->
-
-<!-- - #### [Introduction](#introduction) -->
-
-<!-- - #### [Methodology](#methodology) -->
-
-<!-- - #### [Implementation](#implementation) -->
-
-<!-- - ####  [Results](#results) -->
-
-<!-- - #### [Evaluation](#evaluation) -->
-
-<!-- - #### [Conclusion](#conclusion) -->
-
-<!-- - #### [References](#references) -->
-
-<!-- - #### [Appendices](#appendices) -->
 
 ## Abstract 
 This report introduces **Pageman**, a memory manager designed for Linux systems. Pageman addresses a problem in the freelist buddy allocator used for physical page allocation. The allocator's predefined block sizes create difficulties when allocating memory blocks that don't fit into these sizes, particularly for low-level programs like device drivers and kernel internals which donot have the luxury of relying on virtual contiguous pages.
@@ -64,7 +42,55 @@ Overall, Pageman provides an enhanced memory management solution for Linux syste
 
 ## Introduction
 
+Memory management is a critical aspect of operating systems, and the Linux operating system employs a sophisticated memory management subsystem known as the Linux Memory Manager (Linux MM) to efficiently handle memory allocation and deallocation. Within Linux MM, various memory allocation techniques are utilized to optimize memory utilization and system performance.
+
+One prominent memory allocation technique utilized in Linux is the freelist buddy allocator. This allocator organizes memory into fixed-size blocks and maintains a freelist structure containing linked lists of contiguous memory blocks. However, an inherent challenge faced by the freelist buddy allocator is the issue of internal fragmentation. Internal fragmentation occurs when allocated memory blocks are larger than the requested size, resulting in wasted memory within the blocks and decreased overall memory utilization efficiency.
+
+To mitigate the problem of internal fragmentation, Linux incorporates another memory allocator known as the slab allocator. The slab allocator focuses on the efficient management of small, variable-sized objects by grouping them into caches. By allocating memory in fixed-sized slabs tailored to the object size, the slab allocator reduces internal fragmentation and minimizes wasted memory. However, the slab allocator does have limitations when it comes to allocating large contiguous blocks of memory.
+
+In 2008, an patch was made to address the allocation of large contiguous blocks through the introduction of the `alloc_page_exact` solution in the page allocator API. However, this solution inadvertently resulted in a problem where large blocks that did not fit into individual pages were broken, leading to a scarcity of large contiguous blocks over time. This scarcity poses challenges for applications and low-level programs that require such memory regions.
+
+The current problem we aim to address in this report is finding a balance between reducing internal fragmentation without significantly increasing the scarcity of large contiguous blocks. It is crucial to optimize memory utilization and system performance by minimizing wasted memory while still ensuring the availability of larger contiguous memory regions.
+
+Throughout this report, we will delve into the concepts of the freelist buddy allocator, the slab allocator, the challenges introduced by the alloc_page_exact solution, and the trade-offs between reducing internal fragmentation and the scarcity of large contiguous blocks. By addressing these challenges, our goal is to enhance memory management in Linux, improving overall system performance and efficiency.
+
+The subsequent sections of this report will provide a detailed analysis of the freelist buddy allocator, the slab allocator, the implications of the alloc_page_exact solution, and propose strategies for mitigating internal fragmentation while preserving the availability of large contiguous memory blocks. Through this research, we aim to contribute to the advancement of memory management techniques in Linux, benefiting a wide range of applications, low-level programs, and overall system performance.
+
 ## Methodology
+At its core, Pageman is a memory manger in the sense that it does not do the allocation but just manages the allocations. It instead sits over the Buddy allocator and intercepts any allocation of pages which can be trimmed or fitted. In a similar manner, when it detects any block previously fitted requesting to be freed, it intervenes to free it in an orderly manner to different orders in the freelist. 
+
+Pageman uses two pretty similar algorithms which are the **Fit&Free** during the allocation and the **Free&Fit** during the free stage. To better understand, we will place ourselves in a general scenario. Before we proceed, we need to define some variables and functions which we will be used below.
+
+|variable|Full Name |Type|Meaning|
+|--|--|--|--|
+|S|Size|Integer| It represents the size in Bytes of the requested allocation|
+|n|Order|Integer| It represents the nearest power of 2 for which is greater than or equals to the size|
+|@A|Address|Pointer| It represents the address of the start of the allocated block|
+|S_pg|Size of a RAM PAGE|Number| This is the size of a RAM page|
+|Np|Total Number of pages|Number| This refers to the 2^n or the number of pages which were allocated by the buddy allocator|
+|Np_req (or Np_r)|Number of Required Pages|Number| This refers to the minimum amount of pages to fit the allocation size|
+|S_req|Required Size| Number| This is the Size of the block minimum the amount of page required|
+|S_mid|Half size span| Number| This is half of the size of block| 
+
+
+|Function|Argument1|Argument2|Use|
+|--|--|--|--|
+|ceil|Real Number||Returns the smallest integer greater than the argument|
+|FREE|Pointer|Order|Frees from the address given to a freelist at a particular order|
+
+
+A call to the `alloc_pages_exact`, `alloc_pages_exact`, `__kmalloc_large_node` from the kernel subsystems i.e all page allocation apis which takes in a size as parameter. We proceed as follows. 
+
+![Fit&Free Algorithm](./pics/fit.png)
+- We can note that we continually half the allocated block till while freeing the unused blocks to their ideal order till we are left with a number of pages which can be allocated 
+- If the minimum number of pages is equals to the allocated number, we donot do anything.
+
+Analogously, any call to `free_pages_exact`, `kfree` from the kernel subsystems i.e Any page freeing APIs, we first check if we trimmed the blocked to be freed and in that case, we launch the Free&Fit algorithm as shown below.
+
+![Free&Fit](./pics/free.png)
+- We can note that  we half the allocated space and free it to its ideal order until we are done 
+
+Here we reach the end of this rather short introduction and finally talk about the implementation of the whole system.  
 
 ## Implementation
 
@@ -1200,10 +1226,130 @@ This wrapped up the implementation of pageman. After this, we noticed the follow
 
 ## Results
 
-After the implementation, we could admire the results of our pageman module hijacking the normal linux page allocator. We took several screenshots from boot right up to shit down
+After the implementation, we could admire the results of our pageman module hijacking the normal linux page allocator. By consulting kernel log messages we were able to get the following screenshots
+
 
 ## Evaluation
+To evaluate our algorithm, we created a small python script `statman` aimed at calculating the total amount of pages saved and the time taken to do so. 
+
+- Implementation of statman
+```python
+"""
+Pageman Profiler Documentation
+By LADO SAHA
+
+
+The Pageman Profiler is a tool that analyzes the performance of the Pageman algorithm using system logs. It calculates statistics to evaluate memory savings and time overhead.
+
+Statistics Calculated
+---------------------
+The Pageman Profiler calculates:
+- Fit Interception Count: Number of fit interceptions in logs.
+- Free Interception Count: Number of free interceptions in logs.
+- Required Pages: Pages required for each fit interception.
+- Original Pages: Original number of pages before fit interception.
+- Elapsed Time: Time elapsed during each fit interception.
+- Elapsed Time: Time elapsed during each free interception.
+- Overall Percentage Saved: Percentage of memory saved by Pageman.
+- Total Number of Pages Saved: Total number of pages saved.
+- Total Memory Saved: Total memory saved in megabytes.
+- Total Time Elapsed at Allocation: Total time elapsed during fit interceptions.
+- Total Time Elapsed at Free: Total time elapsed during free interceptions.
+
+"""
+
+
+import re
+import subprocess
+
+def evaluate_algorithm(log_file_path):
+    saved_pages = []                 # List to store the number of saved pages for each fit interception
+    original_pages = []              # List to store the number of original pages for each fit interception
+    time_elapsed = []                # List to store the time elapsed for each fit interception
+    time_elapsed_on_free = []        # List to store the time elapsed for each free interception
+
+    command = ['journalctl', '-b']   # Command to retrieve the system logs
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    output, error = process.communicate()
+
+    # Decode the output as a string
+    logs = output.decode('utf-8')
+
+    for line in logs.split("\n"):
+        match_fit = re.search(r"Stats\|\s*Fit_size=(\d+)\s+KB\s+Required_pages=(\d+)\s+Original_pages=(\d+)\s+Elapse=(\d+)\s+ns", line)
+        match_free = re.search(r"Stats\|\s*Free_size=(\d+)\s+KB\s+fit_pages=(\d+)\s+Max_pages=(\d+)\s+Elapse=(\d+)\s+ns", line)
+
+        if match_fit:
+            required_pages = int(match_fit.group(2))
+            original = int(match_fit.group(3))
+            time_ns = int(match_fit.group(4))
+            saved_pages.append(original - required_pages)
+            original_pages.append(original)
+            time_elapsed.append(time_ns / (1e9))  # Convert nanoseconds to seconds
+
+        elif match_free:
+            time_ns = int(match_free.group(4))
+            time_elapsed_on_free.append(time_ns / 1e9)
+
+    # Calculate overall statistics
+    total_saved_pages = sum(saved_pages)
+    total_original_pages = sum(original_pages)
+    total_time_elapsed = sum(time_elapsed)
+    total_time_elapsed_free = sum(time_elapsed_on_free)
+
+    percentage_saved = ((total_original_pages - total_saved_pages) / total_original_pages) * 100
+    memory_saved_kb = total_saved_pages * 4  # Assuming 4 KB per page
+
+    # Run uptime command to get system uptime
+    command = ['uptime', '-p']
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    output, error = process.communicate()
+
+    # Decode the output as a string
+    uptime_info = output.decode('utf-8').strip()
+
+    # Print report
+    print("Pageman Report (By LADO SAHA)")
+    print(f"uptime: {uptime_info}")
+    print("------")
+    print(f"Fit Interception count: {len(saved_pages)}")
+    print(f"Free Interception count: {len(time_elapsed_on_free)}\n")
+    print(f"Overall Percentage Saved: {percentage_saved:.7f}%")
+    print(f"Total Number of Pages Saved: {total_saved_pages}")
+    print(f"Total Memory Saved: {memory_saved_kb / 1024} MB\n")
+    print(f"Total Time Elapsed at allocation: {total_time_elapsed:.2f} seconds")
+    print(f"Total Time Elapsed at Free: {total_time_elapsed_free:.2f} seconds")
+
+# Example usage
+log_file_path = "/var/log/kern.log"  # Path to the kernel log file, adjust as needed
+evaluate_algorithm(log_file_path)
+```
+- Statman can be ran as follows from the terminal 
+```bash 
+cd ~/manager/linux-6.5.3/pageman/ 
+python3 statman.py
+```
+
+- It is worth noting that it in order to appreciate the effect of Pageman, we need to run it after having the PC on for a long time. 
+- As an example, executing this simple evaluator on a machine with an uptime of 1hr  yields the following results 
+![Statman Results](./pics/statman_.png)
+
 
 ## Conclusion
+The main difficulty faced during this project was the scarce resource about the exact project topic but this led us to go out of scope and gather more fundamental knowledge.
 
-## References
+This project was indeed a great opportunity to get a solid foundation of the linux internals. Eventhough the solution we proposed has been lightly tested, we am certain that it has potentials and could be expanded upon to concieve a better memory management system equiped in all systems .
+
+Thank
+
+## Aritcles & Resources
+1. Billimoria, K. N. (2020). Linux Kernel Programming. Apress.
+2. TheXcellerator. (2020, August 26). Linux Rootkits Part 2: Ftrace and Function Hooking. Retrieved from https://xcellerator.github.io/posts/linux_rootkits_02/
+3. Bing AI 
+4. Poe.com 
+5. [Reducing fragmentation through better allocation](https://lwn.net/Articles/121600/)
+6. [Linux Kernel vs. Memory Fragmentation (Part I)](http://highscalability.com/blog/2021/6/8/linux-kernel-vs-memory-fragmentation-part-i.html)
+7. [Difference between Internal and External fragmentation](https://www.geeksforgeeks.org/difference-between-internal-and-external-fragmentation/)
+8. [Active memory defragmentation](https://lwn.net/Articles/105021/)
+9. [Kernel memory management: where do I begin?](https://stackoverflow.com/questions/33447708/kernel-memory-management-where-do-i-begin)
+10. Memory management articles [Here](https://lwn.net/Articles/121600/) 
