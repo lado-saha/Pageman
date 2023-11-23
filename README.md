@@ -7,7 +7,7 @@
 |Class          |3GI|
 |Subject| Operating System|
 |Teacher Name   |Pr. Djiotio  |
-|Date           |19 Nov 2023 |
+|Date           |23 Nov 2023 |
 
 ## Table of Contents
 
@@ -1229,6 +1229,14 @@ This wrapped up the implementation of pageman. After this, we noticed the follow
 ## Results
 
 After the implementation, we could admire the results of our pageman module hijacking the normal linux page allocator. By consulting kernel log messages we were able to get the following screenshots
+
+![Shot1](./pics/shot_0.png) 
+![Shot1](./pics/shot_2.png) 
+![Shot1](./pics/shot_3.png) 
+![Shot1](./pics/shot_4.png) 
+![Shot1](./pics/shot_5.png) 
+![Shot1](./pics/shot_6.png) 
+
 
 
 ## Evaluation
