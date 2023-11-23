@@ -338,6 +338,14 @@ extern void set_nr_pages_metadata(struct page *page, unsigned short nr_pages);
 extern void *make_alloc_exact(unsigned long addr, unsigned int order,
 			      size_t size);
 
+EXPORT_SYMBOL(is_pageman_loaded);
+EXPORT_SYMBOL(gb_start_address);
+EXPORT_SYMBOL(gb_order);
+EXPORT_SYMBOL(gb_size);
+EXPORT_SYMBOL(get_nr_pages_metadata);
+EXPORT_SYMBOL(set_nr_pages_metadata);
+EXPORT_SYMBOL(pages_metadata_table);
+
 ....
 ```
 
