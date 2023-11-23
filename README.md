@@ -337,17 +337,6 @@ extern void set_nr_pages_metadata(struct page *page, unsigned short nr_pages);
  */
 extern void *make_alloc_exact(unsigned long addr, unsigned int order,
 			      size_t size);
-/**
- *Finally, we need to all of the above to make them visible to the out of tree build i.e Modules 
- */
-EXPORT_SYMBOL(is_pageman_loaded);
-EXPORT_SYMBOL(gb_start_address);
-EXPORT_SYMBOL(gb_order);
-EXPORT_SYMBOL(gb_size);
-EXPORT_SYMBOL(get_nr_pages_metadata);
-EXPORT_SYMBOL(set_nr_pages_metadata);
-EXPORT_SYMBOL(pages_metadata_table);
-
 ....
 ```
 
@@ -388,6 +377,22 @@ void set_nr_pages_metadata(struct page *page, unsigned short nr_pages)
 	unsigned long pfn = page_to_pfn(page);
 	pages_metadata_table[pfn] = nr_pages;
 }
+
+
+
+
+/**
+ *Finally, we need to all of the above to make them visible to the out of tree build i.e Modules 
+ */
+EXPORT_SYMBOL(is_pageman_loaded);
+EXPORT_SYMBOL(gb_start_address);
+EXPORT_SYMBOL(gb_order);
+EXPORT_SYMBOL(gb_size);
+EXPORT_SYMBOL(get_nr_pages_metadata);
+EXPORT_SYMBOL(set_nr_pages_metadata);
+EXPORT_SYMBOL(pages_metadata_table);
+
+
  ....
 ```
 
