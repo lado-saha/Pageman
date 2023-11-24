@@ -5,9 +5,11 @@
 | Name          | LADO SAHA            |
 | ID            | 21P296               |
 | Class         | 3GI                  |
+| School           | Ecole National Polytechnique de Yaounde 1              |
 | Subject       | Operating System     |
-| Teacher Name  | Pr. Djiotio          |
+| Teacher's Name  | Pr, Dr, Eng Thomas DJOTIO NDIE          |
 | Date          | 23 Nov 2023          |
+| Object | School Project|
 
 ## Table of Contents
 
