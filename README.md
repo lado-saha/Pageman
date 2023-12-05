@@ -274,7 +274,8 @@ sudo scripts/config --disable SYSTEM_TRUSTED_KEYS
 
 # Building the kernel and specifying the modules to install 
 # For parallel compilations, we used -j4 which allocates 4 cores 
-make LSMOD=/tmp/lsmod.now localmodconfig -j4
+make LSMOD=/tmp/lsmod.now localmodconfig
+time make -j4
 ```
 
 ### 3. Setting up the Editing environment
