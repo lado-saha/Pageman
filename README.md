@@ -1366,7 +1366,7 @@ sudo cat pageman >> modules.conf
 cd ~/manager/linux-6.5.3/pageman 
 make clean 
 make 
-sudo cp pageman.ko /lib/modules/6.5.3/drivers/acpi
+sudo cp pageman.ko /lib/modules/6.5.3/kernel/drivers/acpi
 
 # Finally, we rebuid the modules index 
 sudo depmod
