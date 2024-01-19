@@ -180,8 +180,8 @@ The following steps were carried out to setup the system
 # The following libraries were installed during the setup process
 
 # Updating the system libraries
-sudo update
-sudo upgrade
+sudo apt update
+sudo apt upgrade
 
 # Installing linux headers for compilation
 sudo apt install build-essential dkms linux-headers-$(uname -r)
