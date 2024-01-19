@@ -25,22 +25,35 @@ The Pageman Profiler calculates:
 import re
 import subprocess
 
-def evaluate_algorithm(log_file_path):
-    saved_pages = []                 # List to store the number of saved pages for each fit interception
-    original_pages = []              # List to store the number of original pages for each fit interception
-    time_elapsed = []                # List to store the time elapsed for each fit interception
-    time_elapsed_on_free = []        # List to store the time elapsed for each free interception
 
-    command = ['journalctl', '-b']   # Command to retrieve the system logs
+def evaluate_algorithm(log_file_path):
+    saved_pages = (
+        []
+    )  # List to store the number of saved pages for each fit interception
+    original_pages = (
+        []
+    )  # List to store the number of original pages for each fit interception
+    time_elapsed = []  # List to store the time elapsed for each fit interception
+    time_elapsed_on_free = (
+        []
+    )  # List to store the time elapsed for each free interception
+
+    command = ["journalctl", "-b"]  # Command to retrieve the system logs
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     output, error = process.communicate()
 
     # Decode the output as a string
-    logs = output.decode('utf-8')
+    logs = output.decode("utf-8")
 
     for line in logs.split("\n"):
-        match_fit = re.search(r"Stats\|\s*Fit_size=(\d+)\s+KB\s+Required_pages=(\d+)\s+Original_pages=(\d+)\s+Elapse=(\d+)\s+ns", line)
-        match_free = re.search(r"Stats\|\s*Free_size=(\d+)\s+KB\s+fit_pages=(\d+)\s+Max_pages=(\d+)\s+Elapse=(\d+)\s+ns", line)
+        match_fit = re.search(
+            r"Stats\|\s*Fit_size=(\d+)\s+KB\s+Required_pages=(\d+)\s+Original_pages=(\d+)\s+Elapse=(\d+)\s+ns",
+            line,
+        )
+        match_free = re.search(
+            r"Stats\|\s*Free_size=(\d+)\s+KB\s+fit_pages=(\d+)\s+Max_pages=(\d+)\s+Elapse=(\d+)\s+ns",
+            line,
+        )
 
         if match_fit:
             required_pages = int(match_fit.group(2))
@@ -60,16 +73,18 @@ def evaluate_algorithm(log_file_path):
     total_time_elapsed = sum(time_elapsed)
     total_time_elapsed_free = sum(time_elapsed_on_free)
 
-    percentage_saved = ((total_original_pages - total_saved_pages) / total_original_pages) * 100
+    percentage_saved = (
+        (total_original_pages - total_saved_pages) / total_original_pages
+    ) * 100
     memory_saved_kb = total_saved_pages * 4  # Assuming 4 KB per page
 
     # Run uptime command to get system uptime
-    command = ['uptime', '-p']
+    command = ["uptime", "-p"]
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     output, error = process.communicate()
 
     # Decode the output as a string
-    uptime_info = output.decode('utf-8').strip()
+    uptime_info = output.decode("utf-8").strip()
 
     # Print report
     print("Pageman Report (By LADO SAHA)")
@@ -82,6 +97,7 @@ def evaluate_algorithm(log_file_path):
     print(f"Total Memory Saved: {memory_saved_kb / 1024} MB\n")
     print(f"Total Time Elapsed at allocation: {total_time_elapsed:.2f} seconds")
     print(f"Total Time Elapsed at Free: {total_time_elapsed_free:.2f} seconds")
+
 
 # Example usage
 log_file_path = "/var/log/kern.log"  # Path to the kernel log file, adjust as needed

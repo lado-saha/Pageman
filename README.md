@@ -180,8 +180,8 @@ The following steps were carried out to setup the system
 # The following libraries were installed during the setup process
 
 # Updating the system libraries
-sudo update
-sudo upgrade
+sudo apt update
+sudo apt upgrade
 
 # Installing linux headers for compilation
 sudo apt install build-essential dkms linux-headers-$(uname -r)
@@ -1358,7 +1358,7 @@ To do this, we had proceeded as follows
 # Navigate to the modules-load.d directory 
 cd /etc/modules-load.d
 
-# Append our module name to the `module.conf` file
+# Append our module name 'pageman' to the `module.conf` file
 sudo cat pageman >> modules.conf 
 
 # Next, we navigate to a convinient location to copy our <module_name>.ko file  
