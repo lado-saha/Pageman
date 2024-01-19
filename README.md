@@ -138,7 +138,7 @@ below.
 A call to the `alloc_pages_exact`, `alloc_pages_exact`, `__kmalloc_large_node` from the kernel
 subsystems i.e all page allocation apis which takes in a size as parameter. We proceed as follows.
 
-![Fit&Free](./pics/fit.png)
+![Fit&Free](./pics/fit.svg)
 
 - We can note that we continually half the allocated block till while freeing the unused blocks to
   their ideal order till we are left with a number of pages which can be allocated
@@ -148,7 +148,7 @@ Analogously, any call to `free_pages_exact`, `kfree` from the kernel subsystems 
 APIs, we first check if we trimmed the blocked to be freed and in that case, we launch the Free&Fit
 algorithm as shown below.
 
-![Free&Fit](./pics/free.png)
+![Free&Fit](./pics/free.svg)
 
 - We can note that we half the allocated space and free it to its ideal order until we are done
 
