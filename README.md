@@ -731,7 +731,7 @@ void *kmalloc_large(size_t size, gfp_t flags)
 
 void *kmalloc_large_node(size_t size, gfp_t flags, int node)
 {
-	void *ret = __kmalloc_large_node(size, flags, NUMA_NO_NODE);
+	void *ret = __kmalloc_large_node(size, flags, node);
 
 	/** New: 0 if the allocation failed*/
 	unsigned long nr_pages = get_nr_pages_metadata(virt_to_page(ret));
