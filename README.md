@@ -12,7 +12,7 @@
 | Object | School Project|
 
 See Presentation [HERE!!](https://tome.app/pageman/pageman-mitigating-internal-fragmentation-in-the-buddy-allocator-clr34ekcr1dqxob5zfd59m8m7) on Tome.ai
-> There you will see a well explained process, from fittin to freeing 
+> In the presentation, you will see a well detailed explanation with well designed Graphics and examples
 
 ## Table of Contents
 
