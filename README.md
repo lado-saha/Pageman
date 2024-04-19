@@ -11,7 +11,7 @@
 | Date          | 23 Nov 2023          |
 | Object | School Project|
 
-See Presentation [HERE!!](https://tome.app/pageman/pageman-mitigating-internal-fragmentation-in-the-buddy-allocator-clr34ekcr1dqxob5zfd59m8m7) on Tome.ai
+See [Presentation](https://tome.app/pageman/pageman-mitigating-internal-fragmentation-in-the-buddy-allocator-clr34ekcr1dqxob5zfd59m8m7) on Tome.ai
 > In the presentation, you will see a well detailed explanation with well designed Graphics and examples
 
 ## Table of Contents
